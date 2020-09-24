@@ -1,0 +1,301 @@
+#+TITLE: MECH 467 Prelab 1:
+#+SUBTITLE: Modeling and Identification of Motion Control Mechanism
+
+#+OPTIONS: toc:nil
+
+#+LATEX_HEADER: \definecolor{bg}{rgb}{0.95,0.95,0.95}
+#+LATEX_HEADER: \setminted{frame=single,bgcolor=bg,samepage=true}
+#+LATEX_HEADER: \setlength{\parindent}{0pt}
+#+LATEX_HEADER: \usepackage{float}
+#+LATEX_HEADER: \usepackage{svg}
+#+LATEX_HEADER: \usepackage{cancel}
+
+* Mathmatical Modeling
+[[file:prelab1.svg]]
+** Find the equivalent inertia of the system, using the law of mechanics and provided data in Table 1.
+The equivalent inertia of the system is the sum of the inertias of the individual components.
+
+The torque required to move a ball screw is given by Eq. 8-1 of Shigley's:
+\begin{equation}\tag{8-1}
+T_R =
+\frac{F d_m}{2}
+\left(
+    \frac{l + \pi f d_m}{\pi d_m - f l}
+\right)
+\end{equation}
+Where:
+\begin{align*}
+d_m &:= \text{average diameter of screw} \\
+l &:= \text{lead of screw} \\
+f &:= \text{friction coefficient between screw and nut}
+\end{align*}
+
+If we assume negligible friction between the screw and the nut, the above equation simplifies down to:
+\begin{equation}
+T = \frac{F l}{2 \pi}
+\end{equation}
+Since we have a single start screw, $l = h_p$, therefore: 
+#+NAME: torque_screw_1
+\begin{equation}
+T = \frac{F h_p}{2 \pi}
+\end{equation}
+
+The force needed to move the table is given by:
+\begin{equation}
+F = ma = m_t \frac{h_p}{2 \pi} \ddot{\theta}
+\end{equation}
+Substituting into equation [[torque_screw_1]] we get:
+\begin{equation}
+T = m_t
+\left(
+    \frac{h_p}{2 \pi}
+\right)^2
+\ddot{\theta}
+\end{equation}
+The equation for rotational inertia is given by:
+\begin{equation}
+T = J \ddot{\theta}
+\end{equation}
+
+With this, solve for the table inertia $J_t$:
+\begin{equation}
+J_t = 
+m_t
+\left(
+    \frac{h_p}{2 \pi}
+\right)^2
+\end{equation}
+Let's calculate this value:
+#+begin_src matlab :session :exports both :results code
+m_t = 20;
+h_p = 0.02;
+
+J_t = m_t * (h_p/(2*pi))^2;
+ans = J_t
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+0.00020264
+#+end_src
+
+We also need the rotational inertia of the screw $J_s$ itself.
+Approximating the screw to be a cylinder with diameter $d_s$, we get:
+\begin{equation}
+J_s = \frac{1}{2} m_s r_s^2
+\end{equation}
+
+Let's calculate this value:
+#+begin_src matlab :session :exports both :results code
+d_s = 0.02;
+rho_s = 7800;
+L_s = 0.82;
+
+r_s = d_s/2;
+m_s = rho_s*pi*r_s^2*L_s;
+
+J_s = 1/2*m_s*r_s^2;
+ans = J_s
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+0.00010047
+#+end_src
+
+Now we can combine these values with the given inertias to find the equivalent inerita of the whole system:
+#+begin_src matlab :session :exports both :results code
+J_m = 0.765E-4;
+J_enc = 1.7E-4;
+J_coup = 4E-5;
+J_tach = 9.3212E-7;
+
+J_eq = J_m + J_enc + J_coup + J_tach + J_t + J_s;
+ans = J_eq
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+0.00059054
+#+end_src
+
+** Find the transfer functions from $I_\text{in}(s)$ to $I_m(s)$, from $V_\text{in}(s)$ to $I_m(s)$ and from $I_m(s)$ to $\omega(s)$. Assume $T_d = 0$
+<<sec:findtfr>>
+
+Let:
+\begin{align*}
+S_g &:= \text{current sensor gain} \\
+P(s) &:= \text{transfer function of the PWM amplifier} \\
+E(s) &:= \text{transfer function of the motor windings} \\
+K_t &:= \text{motor constant} \\
+M(s) &:= \text{transfer function of the mechanical block} \\
+K_b &:= \text{back emf constant}
+\end{align*}
+
+*** $I_\text{in}(s)$ to $I_m(s)$ (Electrical)
+\begin{align}
+I_m(s) &=
+E(s)
+\left(
+    P(s)
+    \left(
+        I_\text{in}(s) - I_m(s)
+    \right)
+    - K_b M(s)
+    \left(
+        K_t I_m(s) - \cancelto{0}{T_d}
+    \right)
+\right) \nonumber \\
+&=
+E(s)
+\left(
+    P(s) I_\text{in}(s) - P(s) I_m(s)
+    - K_b M(s) K_t I_m(s) 
+\right) \nonumber \\
+&=
+E(s)
+\left(
+    I_\text{in}(s) P(s)
+    - I_m(s)
+    \left(
+        K_b M(s) K_t  + P(s)
+    \right)
+\right) \nonumber \\
+&=
+I_\text{in}(s) P(s) E(s)
+- I_m(s) E(s)
+\left(
+    K_b M(s) K_t  + P(s)
+\right) \nonumber \\
+\nonumber \\ 
+\frac{I_m(s)}{I_\text{in}(s)}
+&=
+\frac
+{P(s)E(s)}
+{1 + E(s)\left(K_b M(s) K_t  + P(s)\right)}
+\end{align}
+
+*** $V_\text{in}(s)$ to $I_m(s)$
+
+\begin{align}
+I_\text{in}(s) &= S_g V_\text{in}(s) \nonumber \\
+\nonumber \\
+\frac{I_m(s)}{V_\text{in}(s)}
+&= \frac{S_g I_m(s)}{I_\text{in}(s)}
+\end{align}
+
+*** $I_m(s)$ to $\omega(s)$
+\begin{align}
+\omega(s)
+&=
+M(s)
+\left(
+    I_m(s) K_t - \cancelto{0}{T_d}
+\right) \nonumber \\
+&=
+M(s)I_m(s) K_t \nonumber \\
+\nonumber \\
+\frac{\omega(s)}{I_m(s)}
+&= K_t M(s) 
+\end{align}
+** By using the two transfer functions found from [[sec:findtfr]], find a transfer function from the voltage command input to the drive's angular velocity (i.e. $V_\text{in}(s)$ to $\omega(s)$)
+\begin{align}
+\omega(s)
+&=
+\frac{\omega(s)}{I_m(s)}
+\frac{I_m(s)}{V_\text{in}(s)}
+V_\text{in}(s) \nonumber \\
+&=
+K_t M(s)
+\frac{S_g I_m(s)}{I_\text{in}(s)}
+V_\text{in}(s) \nonumber \\
+&=
+K_t M(s)
+S_g
+\frac
+{P(s)E(s)}
+{1 + E(s)\left(K_b M(s) K_t  + P(s)\right)}
+V_\text{in}(s) \nonumber \\
+\nonumber \\
+\frac{\omega(s)}{V_\text{in}(s)}
+&=
+K_t M(s)
+S_g
+\frac
+{P(s)E(s)}
+{1 + E(s)\left(K_b M(s) K_t  + P(s)\right)}
+\end{align}
+** Draw the block diagram with respect to disturbance input only (i.e. $V_\text{in} = 0$). Rearrange the block diagram such that $T_d$ appears as the input on the far left of the diagram. Keep the original blocks without combining them.
+#+BEGIN_SRC matlab :session :exports none :results none :eval never-export
+simulink
+#+END_SRC
+
+#+BEGIN_SRC matlab :session :exports none :results code
+
+open_system('t_d');
+print -dsvg -s 't_d.svg';
+
+#+END_SRC
+
+#+RESULTS:
+#+begin_src matlab
+org_babel_eoe
+#+end_src
+
+[[file:t_d.svg]]
+
+** Find the transfer function from disturbance input ($T_d(s)$) to angular velocity ($\omega(s)$) (i.e. assume $V_\text{in}(s) = 0$)
+\begin{align}
+I_m(s)
+&=
+E(s)
+\left(
+    -P(s) I_m(s)
+    -K_b \omega(s)
+\right) \nonumber \\
+&=
+-I_m(s)E(s) P(s)
+-E(s) K_b \omega(s) \nonumber \\
+&=
+\frac
+{-E(s) K_b \omega(s)}
+{1 + E(s) P(s)} \nonumber \\
+\nonumber \\
+\omega(s)
+&=
+M(s)
+\left(
+    K_t I_m(s)
+    - T_d(s)
+\right) \nonumber \\
+&=
+M(s)
+\left(
+    -K_t
+    \frac
+    {E(s) K_b \omega(s)}
+    {1 + E(s) P(s)}
+    - T_d(s)
+\right) \nonumber \\
+&=
+-\omega(s)
+M(s)
+K_t
+\frac
+{E(s) K_b}
+{1 + E(s) P(s)}
+- M(s) T_d(s) \nonumber \\
+\nonumber \\
+\frac{\omega(s)}{T_d(s)}
+&=
+-\frac
+{M(s)}
+{
+    1 + 
+    M(s)
+    K_t
+    \frac
+    {E(s) K_b}
+    {1 + E(s) P(s)}
+}
+\end{align}
