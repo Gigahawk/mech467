@@ -10,6 +10,7 @@
 #+LATEX_HEADER: \usepackage{svg}
 #+LATEX_HEADER: \usepackage{cancel}
 
+Note: when not specified, all units are SI without prefixes.
 * Mathmatical Modeling
 [[file:prelab1.svg]]
 ** Find the equivalent inertia of the system, using the law of mechanics and provided data in Table 1.
@@ -35,7 +36,7 @@ If we assume negligible friction between the screw and the nut, the above equati
 T = \frac{F l}{2 \pi}
 \end{equation}
 Since we have a single start screw, $l = h_p$, therefore: 
-#+NAME: torque_screw_1
+#+NAME: eq:torque_screw_1
 \begin{equation}
 T = \frac{F h_p}{2 \pi}
 \end{equation}
@@ -44,7 +45,7 @@ The force needed to move the table is given by:
 \begin{equation}
 F = ma = m_t \frac{h_p}{2 \pi} \ddot{\theta}
 \end{equation}
-Substituting into equation [[torque_screw_1]] we get:
+Substituting into equation [[eq:torque_screw_1]] we get:
 \begin{equation}
 T = m_t
 \left(
@@ -133,6 +134,7 @@ K_b &:= \text{back emf constant}
 \end{align*}
 
 *** $I_\text{in}(s)$ to $I_m(s)$ (Electrical)
+#+NAME: eq:iin_to_im
 \begin{align}
 I_m(s) &=
 E(s)
@@ -185,6 +187,7 @@ I_\text{in}(s) &= S_g V_\text{in}(s) \nonumber \\
 \end{align}
 
 *** $I_m(s)$ to $\omega(s)$
+#+NAME: eq:im_to_omega
 \begin{align}
 \omega(s)
 &=
@@ -199,6 +202,8 @@ M(s)I_m(s) K_t \nonumber \\
 &= K_t M(s) 
 \end{align}
 ** By using the two transfer functions found from [[sec:findtfr]], find a transfer function from the voltage command input to the drive's angular velocity (i.e. $V_\text{in}(s)$ to $\omega(s)$)
+<<sec:findtfr2>>
+
 \begin{align}
 \omega(s)
 &=
@@ -230,18 +235,14 @@ S_g
 simulink
 #+END_SRC
 
-#+BEGIN_SRC matlab :session :exports none :results code
+#+BEGIN_SRC matlab :session :exports results :results file
 
 open_system('t_d');
 print -dsvg -s 't_d.svg';
-
+ans = 't_d.svg'
 #+END_SRC
 
 #+RESULTS:
-#+begin_src matlab
-org_babel_eoe
-#+end_src
-
 [[file:t_d.svg]]
 
 ** Find the transfer function from disturbance input ($T_d(s)$) to angular velocity ($\omega(s)$) (i.e. assume $V_\text{in}(s) = 0$)
@@ -299,3 +300,478 @@ K_t
     {1 + E(s) P(s)}
 }
 \end{align}
+\newpage
+* Model Order Reduction
+In this question use the approximate damping value of $\SI{0.006}{\newton\meter\per\radian\per\second}$ until the true damping and friction values are found by testing the actual machine.
+** Substitute the parameters from Table 1 into the transfer function derived in [[sec:findtfr]] and [[sec:findtfr2]] and plot the step response and frequency response of the transfer function from $I_m(s)$ to $\omega(s)$. Find the bandwidth, DC gain and the rise time.
+<<sec:resp_im_to_omega>>
+Defining the block transfer functions in Eq. [[eq:im_to_omega]]:
+\begin{equation}
+M(s) = \frac{1}{J_\text{eq} s + B}
+\end{equation}
+Let's substitute in our values:
+#+begin_src matlab :session :exports code :results none
+K_t = 0.72;
+B = 0.006;
+
+M = tf([1], [J_eq B]);
+
+im_to_omega = K_t*M;
+#+end_src
+
+Now we can plot the step response:
+#+begin_src matlab :session :exports both :results file
+f_name = 'step1.svg'
+f = figure('visible', 'off', ...
+           'Position', [0 0 600 300]);
+step(im_to_omega);
+saveas(f, f_name);
+ans = f_name
+#+end_src
+
+#+RESULTS:
+[[file:step1.svg]]
+
+And the frequency response as well:
+#+begin_src matlab :session :exports both :results file
+f_name = 'bode1.svg'
+f = figure('visible', 'off');
+options = bodeoptions;
+options.FreqUnits = 'Hz';
+bode(im_to_omega, options);
+saveas(f, f_name);
+ans = f_name
+#+end_src
+
+#+RESULTS:
+[[file:bode1.svg]]
+
+We can also find the bandwidth:
+#+begin_src matlab :session :exports both :results code
+ans = bandwidth(im_to_omega);
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+10.136
+#+end_src
+
+As well as the DC gain:
+#+begin_src matlab :session :exports both :results code
+ans = dcgain(im_to_omega);
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+120
+#+end_src
+
+And finally the rise time:
+#+begin_src matlab :session :exports both :results code
+ans = stepinfo(im_to_omega).RiseTime;
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+0.21624
+#+end_src
+
+** Find the frequency response of the transfer function from $I_\text{in}(s)$ to $I_m(s)$. Find the bandwidth and DC gain.
+<<sec:resp_iin_to_im>>
+*** Substitution
+Defining the block transfer functions in Eq. [[eq:iin_to_im]]:
+\begin{align}
+P(s) &=
+K_{vp} + \frac{K_{vi}}{s}
+= \frac{K_{vp} s + K_{vi}}{s} \\ 
+E(s) &=
+\frac{1}{L_a s + R_a}
+\end{align}
+Let's substitute in our values:
+#+begin_src matlab :session :exports code :results none
+K_vp = 111.55;
+K_vi = 3.0019E5;
+K_t = 0.72;
+K_b = 0.4173;
+L_a = 0.0375;
+R_a = 6.5;
+
+P = tf([K_vp K_vi], [1 0]);
+E = tf([1], [L_a R_a]);
+iin_to_im = (P*E)/(1 + E*(K_b*M*K_t + P));
+#+end_src
+*** Response plots
+Now we can plot the frequency response:
+#+begin_src matlab :session :exports both :results file
+f_name = 'bode2.svg'
+f = figure('visible', 'off');
+options = bodeoptions;
+options.FreqUnits = 'Hz';
+bode(iin_to_im, options);
+saveas(f, f_name);
+ans = f_name
+#+end_src
+
+#+RESULTS:
+[[file:bode2.svg]]
+
+*** Transfer function properties
+Let's find the bandwidth:
+#+begin_src matlab :session :exports both :results code
+ans = bandwidth(iin_to_im);
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+5119.4
+#+end_src
+
+And also find the DC gain:
+#+begin_src matlab :session :exports both :results code
+ans = dcgain(iin_to_im);
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+1
+#+end_src
+** Plot the unit step response, unit ramp response and frequency response of transfer function from $V_\text{in}(s)$ to $\omega(s)$. Find the bandwidth, DC gain and rise time. It is better to scale the velocity response with the DC gain of the transfer function to plot both the input and output on the same scale. Compare the bandwidths and rise times obtained in [[sec:resp_im_to_omega]] and [[sec:resp_vin_to_omega]]. What do you notice? Also compare the DC gains obtained in [[sec:resp_im_to_omega]] and [[sec:resp_vin_to_omega]]. Find the steady state error for a ramp input response analytically, and compare against the simulation result. Note that the input $V$ in is in volts and the output $\omega$ is in radian/sec. In order to find the steady state error of the ramp input, you need to scale the transfer function by the DC gain of the system.
+<<sec:resp_vin_to_omega>>
+*** Substitution
+Let's substitute in our values:
+#+begin_src matlab :session :exports code :results none
+S_g = 0.887;
+
+vin_to_omega = K_t*M*S_g*iin_to_im;
+#+end_src
+
+*** Response plots
+Now we can find the step response:
+#+begin_src matlab :session :exports both :results file
+f_name = 'step3.svg'
+f = figure('visible', 'off', ...
+           'Position', [0 0 600 300]);
+step(vin_to_omega);
+saveas(f, f_name);
+ans = f_name
+#+end_src
+
+#+RESULTS:
+[[file:step3.svg]]
+
+And the ramp response:
+#+begin_src matlab :session :exports both :results file
+f_name = 'ramp3.svg'
+f = figure('visible', 'off', ...
+           'Position', [0 0 600 300]);
+% Divide by s to get ramp response
+% Divide by DC gain to get normalized response
+% Use shorter time delta to show steadystate error
+h = stepplot(vin_to_omega/tf('s')/dcgain(vin_to_omega),...
+             1/tf('s'), 1);
+p = getoptions(h);
+p.Title.String = 'Ramp Response';
+setoptions(h, p);
+l = legend('Normalized response', 'Ramp input');
+set(l, 'color', 'none', 'edgecolor', 'none');
+saveas(f, f_name);
+
+ans = f_name
+#+end_src
+
+#+RESULTS:
+[[file:ramp3.svg]]
+
+And finally the frequency response:
+#+begin_src matlab :session :exports both :results file
+f_name = 'bode3.svg'
+f = figure('visible', 'off');
+options = bodeoptions;
+options.FreqUnits = 'Hz';
+bode(vin_to_omega, options);
+saveas(f, f_name);
+ans = f_name
+#+end_src
+
+#+RESULTS:
+[[file:bode3.svg]]
+
+*** Transfer function properties
+Let's find the bandwidth of the system:
+#+begin_src matlab :session :exports both :results code
+ans = bandwidth(vin_to_omega);
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+10.119
+#+end_src
+
+As can be seen, the bandwidth is largely limited by the mechanical system, and the total bandwidth of the system is just slightly lower than that of just the mechanical system.
+
+Let's find the DC gain:
+#+begin_src matlab :session :exports both :results code
+ans = dcgain(vin_to_omega);
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+106.44
+#+end_src
+
+This matches our expectations, since this is the product of all of the gains of each subsystem.
+#+begin_src matlab :session :exports both :results code
+ans = S_g*dcgain(iin_to_im)*dcgain(im_to_omega);
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+106.44
+#+end_src
+
+Let's find the rise time:
+#+begin_src matlab :session :exports both :results code
+ans = stepinfo(im_to_omega).RiseTime;
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+0.21624
+#+end_src
+
+The rise time of the whole system is limited by the mechanical system, in this case the electrical subsystem has negligible rise time in the context of the whole system.
+*** Steady state error analysis
+**** Simulation approach
+
+Let's find the steady state error of the system in simulation:
+#+begin_src matlab :session :exports both :results code
+t = 10000;
+% Divide by s to get ramp response
+% Divide by DC gain to get normalized response
+y1 = step(vin_to_omega/tf('s')/dcgain(vin_to_omega), t);
+y2 = step(1/tf('s'), t);
+
+ans = y2(end) - y1(end)
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+0.098612
+#+end_src
+**** Analytical approach
+
+Let's first get the numerical coefficients for $\frac{\omega(s)}{V_\text{in}(s)}$ (with gain normalized to unity).
+#+begin_src matlab :session :exports both :results code
+[num, den] = tfdata(vin_to_omega/dcgain(vin_to_omega));
+
+ans = [num; den]
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+|        0 |          0 | 0.0015776 |  4.535 | 781.81 | 7476.8 | 0 |
+| 5.22e-08 | 0.00017443 |   0.45058 | 81.647 | 1519.1 | 7476.8 | 0 |
+#+end_src
+
+Now let's define our error function:
+#+begin_src matlab :session :exports code :results none
+syms s;
+vin_to_omega_sym = poly2sym(cell2mat(num),s)/poly2sym(cell2mat(den),s);
+% ramp input
+R = 1/s^2;
+
+error_func = R*(1 - vin_to_omega_sym);
+#+end_src
+
+Let's take the limit of our error function:
+#+begin_src matlab :session :exports both :results code
+ans = limit(s*error_func, s, 0)
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+0.098612
+#+end_src
+
+
+
+
+#+begin_comment
+\begin{align*}
+\frac{I_m(s)}{I_\text{in}(s)}
+&=
+\frac
+{P(s)E(s)}
+{1 + E(s)\left(K_b M(s) K_t  + P(s)\right)} \\
+&=
+\left[\frac{K_{vp} s + K_{vi}}{s}\right]
+\left[\frac{1}{L_a s + R_a}\right]
+\frac
+{1}
+{1 + E(s)\left(K_b M(s) K_t  + P(s)\right)} \\
+&=
+\left[
+    \frac{K_{vp} s + K_{vi}}{L_a s^2 R_a s}
+\right]
+\frac
+{1}
+{1 + E(s)\left(K_b M(s) K_t  + P(s)\right)} \\
+&=
+\left[
+    \frac{K_{vp} s + K_{vi}}{L_a s^2 R_a s}
+\right]
+\frac
+{1}
+{
+  1
+  + \left[\frac{1}{L_a s + R_a}\right]
+  \left(K_b K_t
+    \left[\frac{1}{J_\text{eq} s + B}\right]
+    + \left[\frac{K_{vp} s + K_{vi}}{s}\right]
+  \right)
+} \\
+&=
+\left[
+    \frac{K_{vp} s + K_{vi}}{L_a s^2 R_a s}
+\right]
+\frac
+{1}
+{
+  1
+  + \left[
+    \frac
+    {K_b K_t}
+    {
+      L_a J_\text{eq} s^2
+      + (L_a B + R_a J_\text{eq}) s
+      + R_a B
+    }
+  \right]
+  + \left[
+    \frac
+    {K_{vp} s + K_{vi}}
+    {
+      L_a s^2 + R_a s
+    }
+  \right]
+} \\
+&=
+\left[
+    \frac{K_{vp} s + K_{vi}}{L_a s^2 R_a s}
+\right]
+\frac
+{1}
+{
+  1
+  + \frac
+  {
+    [K_b K_t(L_a s^2 + R_a s)]
+    + [(K_{vp} s + K_{vi})
+    (
+      L_a J_\text{eq} s^2
+      + (L_a B + R_a J_\text{eq}) s
+      + R_a B
+    )]
+  }
+  {
+    L_a^2 J_\text{eq} s^4
+    + (L_a J_\text{eq} R_a + (L_a B + R_a J_\text{eq})L_a) s^3
+    + ((L_a B + R_a J_\text{eq})R_a + R_a B L_a) s^2
+    + R_a^2 B s
+  }
+} \\
+&=
+\left[
+    \frac{K_{vp} s + K_{vi}}{L_a s^2 R_a s}
+\right] \\
+& \frac
+{1}
+{
+  1
+  + \frac
+  {
+    [K_b K_t L_a s^2 + K_b K_t R_a s]
+    +
+    [
+      K_{vp} L_a J_\text{eq} s^3
+      + (K_{vp}(L_a B + R_a J_\text{eq}) + K_{vi} L_a J_\text{eq}) s^2
+      + (K_{vp} R_a B + K_{vi}(L_a B + R_a J_\text{eq})) s
+      + K_{vi} R_a B
+    ]
+  }
+  {
+    L_a^2 J_\text{eq} s^4
+    + (L_a J_\text{eq} R_a + (L_a B + R_a J_\text{eq})L_a) s^3
+    + ((L_a B + R_a J_\text{eq})R_a + R_a B L_a) s^2
+    + R_a^2 B s
+  }
+} \\
+&=
+\left[
+    \frac{K_{vp} s + K_{vi}}{L_a s^2 R_a s}
+\right] \\
+& \frac
+{1}
+{
+  1
+  + \frac
+  {
+    K_{vp} L_a J_\text{eq} s^3
+    + (K_{vp}(L_a B + R_a J_\text{eq}) + K_{vi} L_a J_\text{eq} + K_b K_t L_a) s^2
+    + (K_{vp} R_a B + K_{vi}(L_a B + R_a J_\text{eq}) + K_b K_t R_a) s
+    + K_{vi} R_a B
+  }
+  {
+    L_a^2 J_\text{eq} s^4
+    + (L_a J_\text{eq} R_a + (L_a B + R_a J_\text{eq}) L_a) s^3
+    + ((L_a B + R_a J_\text{eq})R_a + R_a B L_a) s^2
+    + R_a^2 B s
+  }
+} \\
+\end{align*}
+
+
+Let's first expand our existing expression for $\frac{\omega(s)}{V_\text{in}(s)}$.
+\begin{align*}
+\frac{\omega(s)}{V_\text{in}(s)}
+&=
+K_t M(s)
+S_g
+\frac
+{P(s)E(s)}
+{1 + E(s)\left(K_b M(s) K_t  + P(s)\right)} \\
+&=
+S_g K_t
+\left[\frac{1}{J_\text{eq} s + B}\right]
+\left[\frac{K_{vp} s + K_{vi}}{s}\right]
+\left[\frac{1}{L_a s + R_a}\right]
+\frac
+{1}
+{1 + E(s)\left(K_b M(s) K_t  + P(s)\right)} \\
+&=
+S_g K_t
+\left[
+    \frac
+    {K_{vp} s + K_{vi}}
+    {
+        J_\text{eq}L_a s^3
+        + (J_\text{eq} R_a + B L_a)s^2
+        B R_a s
+    }
+\right]
+\frac
+{1}
+{
+  1
+  + \left[\frac{1}{L_a s + R_a}\right]
+  \left(
+    K_b K_t
+    \left[\frac{1}{J_\text{eq} s + B}\right]
+    + \left[\frac{K_{vp} s + K_{vi}}{s}\right]
+  \right)} \\
+\end{align*}
+#+end_comment
+
+
+
+** Based on your observations, draw a simplified (reduced) block diagram of the ball screw feed drive system (which reasonably represents frequencies up to 1000 [rad/s]).
