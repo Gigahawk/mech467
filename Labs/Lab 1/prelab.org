@@ -1,4 +1,5 @@
 #+TITLE: MECH 467 Prelab 1:
+#+AUTHOR: Jasper Chan - 37467164
 #+SUBTITLE: Modeling and Identification of Motion Control Mechanism
 
 #+OPTIONS: toc:nil
@@ -236,7 +237,6 @@ simulink
 #+END_SRC
 
 #+BEGIN_SRC matlab :session :exports results :results file
-
 open_system('t_d');
 print -dsvg -s 't_d.svg';
 ans = 't_d.svg'
@@ -336,9 +336,7 @@ And the frequency response as well:
 #+begin_src matlab :session :exports both :results file
 f_name = 'bode1.svg'
 f = figure('visible', 'off');
-options = bodeoptions;
-options.FreqUnits = 'Hz';
-bode(im_to_omega, options);
+bode(im_to_omega);
 saveas(f, f_name);
 ans = f_name
 #+end_src
@@ -405,9 +403,7 @@ Now we can plot the frequency response:
 #+begin_src matlab :session :exports both :results file
 f_name = 'bode2.svg'
 f = figure('visible', 'off');
-options = bodeoptions;
-options.FreqUnits = 'Hz';
-bode(iin_to_im, options);
+bode(iin_to_im);
 saveas(f, f_name);
 ans = f_name
 #+end_src
@@ -486,9 +482,7 @@ And finally the frequency response:
 #+begin_src matlab :session :exports both :results file
 f_name = 'bode3.svg'
 f = figure('visible', 'off');
-options = bodeoptions;
-options.FreqUnits = 'Hz';
-bode(vin_to_omega, options);
+bode(vin_to_omega);
 saveas(f, f_name);
 ans = f_name
 #+end_src
@@ -775,3 +769,51 @@ S_g K_t
 
 
 ** Based on your observations, draw a simplified (reduced) block diagram of the ball screw feed drive system (which reasonably represents frequencies up to 1000 [rad/s]).
+#+BEGIN_SRC matlab :session :exports none :results none :eval never-export
+simulink
+#+END_SRC
+
+#+BEGIN_SRC matlab :session :exports results :results file
+open_system('simplified');
+print -dsvg -s 'simplified.svg';
+ans = 'simplified.svg'
+#+END_SRC
+
+#+RESULTS:
+[[file:simplified.svg]]
+
+Let's create this system:
+#+begin_src matlab :session :exports code :results none
+vin_to_omega_simp = K_t*M*S_g;
+#+end_src
+
+We can verify that this simplified system closely represents the original system by looking at the response plots:
+#+begin_src matlab :session :exports both :results file
+f_name = 'step4.svg'
+f = figure('visible', 'off', ...
+           'Position', [0 0 600 300]);
+step(vin_to_omega_simp, vin_to_omega);
+l = legend('Simplified', 'Original', 'Location', 'SouthEast');
+set(l, 'color', 'none', 'edgecolor', 'none');
+saveas(f, f_name);
+ans = f_name
+#+end_src
+
+#+RESULTS:
+[[file:step4.svg]]
+
+#+begin_src matlab :session :exports both :results file
+f_name = 'bode4.svg'
+f = figure('visible', 'off');
+bode(vin_to_omega_simp, vin_to_omega, {0, 1000});
+bode_h = findall(f, 'type', 'axes');
+l = legend(bode_h(3), 'Simplified', 'Original');
+set(l, 'color', 'none', 'edgecolor', 'none');
+saveas(f, f_name);
+ans = f_name
+#+end_src
+
+#+RESULTS:
+[[file:bode4.svg]]
+
+As can be seen, the simplified system closely represents the original system.
