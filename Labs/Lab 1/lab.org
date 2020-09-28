@@ -1,0 +1,276 @@
+#+TITLE: MECH 467 Lab 1:
+#+AUTHOR: Jasper Chan - 37467164 @@latex:\\@@ jasperchan515@gmail.com
+#+SUBTITLE: Modeling and Identification of Motion Control Mechanism
+
+#+OPTIONS: title:nil toc:nil
+
+#+LATEX_HEADER: \definecolor{bg}{rgb}{0.95,0.95,0.95}
+#+LATEX_HEADER: \setminted{frame=single,bgcolor=bg,samepage=true}
+#+LATEX_HEADER: \setlength{\parindent}{0pt}
+#+LATEX_HEADER: \usepackage{float}
+#+LATEX_HEADER: \usepackage{svg}
+#+LATEX_HEADER: \usepackage{cancel}
+
+#+BEGIN_EXPORT latex
+\makeatletter
+\begin{titlepage}
+\begin{center}
+\vspace*{2in}
+{\Large \@title \par}
+\vspace{1in}
+{\Large \@author \par}
+\vspace{3in}
+{\large \@date}
+\end{center}
+\end{titlepage}
+\makeatother
+#+END_EXPORT
+
+#+BEGIN_EXPORT latex
+\begin{abstract}
+asdf here is an abstractllolololo
+\end{abstract}
+#+END_EXPORT
+
+Note: when not specified, all units are SI without prefixes.
+* Identification of Friction Parameters
+** To identify the Coulomb and viscous friction parameters, move the table at constant speeds and measure the voltage supplied to the amplifier (i.e. the current supplied to the motor to overcome the frictional torque). Convert the measured table speeds [mm/s] to angular velocity of the motor [rad/s] using the pitch of the ballscrew. Also calculate the corresponding motor current [A] and motor torque [Nm] from the measured voltage using the amplifier and motor gains. Plot the friction curve, i.e. torque [Nm] vs angular velocity [rad/s], for the positive and negative directions on the same plot.
+First let's load the each dataset and associate it with the correct angular velocity:
+#+begin_src matlab :session :exports both :results none
+h_p = 0.02; % m/revolution
+path = 'data/part_1';
+files = dir(fullfile(path, '*.mat'));
+
+data = {};
+for i = 1:length(files)
+    f_name = files(i).name;
+    f_path = fullfile(path, f_name);
+    l_speed = sscanf(f_name, '%d_mmps.mat')/1000; % m/s
+    omega = 2*pi/h_p * l_speed; % rad/s
+    % each .mat file contains a variable called output
+    load(f_path); 
+    data{i, 1} = omega;
+    data{i, 2} = output;
+end
+% Sort data by speed
+data = sortrows(data, 1);
+#+end_src
+
+Now that we have all the data loaded, we can iterate through it to find the average signal voltage required to move the table in either direction:
+#+begin_src matlab :session :exports both :results none
+for i = 1:length(data)
+    d = data{i, 2};
+    in = d.CH1in;
+    sig = d.CH1sig;
+    start_idx = find(in, 1);
+    end_idx = find(in, 1, 'last');
+    [~, max_idx] = max(in);
+    fw_volt = mean(sig(start_idx:max_idx));
+    bw_volt = mean(sig(max_idx:end_idx));
+    data{i, 3} = fw_volt;
+    data{i, 4} = bw_volt;
+end
+#+end_src
+
+We can use the voltage data to calculate the corresponding current and torque values:
+#+begin_src matlab :session :exports both :results none
+S_g = 0.887; % A/V
+K_t = 0.72; % Nm/A
+for i = 1:length(data)
+    fw_volt = data{i, 3};
+    bw_volt = data{i, 4};
+    fw_curr = fw_volt*S_g;
+    bw_curr = bw_volt*S_g;
+    fw_torque = fw_curr*K_t;
+    bw_torque = bw_curr*K_t;
+    data{i, 5} = fw_curr;
+    data{i, 6} = bw_curr;
+    data{i, 7} = fw_torque;
+    data{i, 8} = bw_torque;
+end
+#+end_src
+
+Now that we have the torques at each velocity, we can extract the data we want to plot:
+#+begin_src matlab :session :exports code :results none
+abs_speed = [];
+fw_torque = [];
+bw_torque = [];
+for i = 1:length(data)
+    abs_speed = [abs_speed data{i, 1}];
+    fw_torque = [fw_torque data{i, 7}];
+    bw_torque = [bw_torque data{i, 8}];
+end
+
+speed = [-flip(abs_speed) abs_speed];
+torque = [flip(bw_torque) fw_torque];
+#+end_src
+
+Plotting the data:
+#+begin_src matlab :session :exports results :results file
+f_name = 'fric1.svg';
+f = figure('visible', 'off');
+scatter(speed, torque);
+zero_line = refline(0,0);
+zero_line.Color = 'k';
+zero_line.LineStyle = '--';
+title('Friction plot');
+ylabel('Torque (Nm)');
+xlabel('Angular Velocity (rad/s)');
+
+saveas(f, f_name);
+ans = f_name
+#+end_src
+
+#+RESULTS:
+[[file:fric1.svg]]
+** Find the equivalent viscous damping constant ($B_e$) in [Nm/rad/s] by fitting straight lines to each direction of the friction curves and averaging the values of the slopes obtained for each of the lines.
+Fitting each side of the friction curve finding each slope:
+#+begin_src matlab :session :exports both :results code
+[fp, ~] = polyfit(abs_speed, fw_torque, 1);
+[fm, ~] = polyfit(abs_speed, -bw_torque, 1);
+B_ep = fp(1);
+B_em = fm(1);
+
+ans = [B_ep B_em]
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+| 0.010013 | 0.009973 |
+#+end_src
+
+Taking the average:
+#+begin_src matlab :session :exports both :results code
+B_e = mean([B_ep B_em]);
+
+ans = B_e % Nm/rad/s
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+0.009993
+#+end_src
+** Obtain the Coulomb friction constant in each direction (i.e. $\mu_{k+}$ and $\mu_{k-}$) from the y-intercept of the fitted lines. Do you think it makes sense that $\mu_{k+}$ and $\mu_{k-}$ could have different magnitudes? Explain briefly. For simplicity average the magnitudes of $\mu_{k+}$ and $\mu{k-}$ and obtain a single Coulomb friction constant ($\mu_k$).
+Fitting each side of the friction curve and finding each intercept:
+#+begin_src matlab :session :exports both :results code
+mu_kp = fp(2)
+mu_km = fm(2)
+
+ans = [mu_kp mu_km]
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+| 0.22581 | 0.22295 |
+#+end_src
+
+Taking the average:
+#+begin_src matlab :session :exports both :results code
+mu_k = mean([mu_kp mu_km]);
+
+ans = mu_k % 
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+0.22438
+#+end_src
+
+We can see that $\mu_{k+} \approx \mu_{k-}$.
+There is a potential for $\mu_{k+}$ and $\mu_{k-}$ to be different since the engaged thread surface changes with the direction (i.e. positive face of the nut threads engages with negative face of the screw thread and vice versa).
+The thread surface imperfections of the may also be biased towards a certain direction, requiring less force to slide in one direction than the other.
+
+However, given the closeness of the results and the assumption that the machine has run enough in both directions enough to evenly wear the threads, the observed difference is likely error from the curve fits exacerbated by the signal noise in the original data.
+
+** Simple friction curves are usually described using the sign function as: $T_d = \mu_k \text{sign}(\omega)$. However, the sign function does not give an accurate description of the friction behavior at low speed region, i.e. $\omega \approx 0$. Can you briefly explain why? Roughly sketch the following curves on top of each other in one plot: a) Friction curve using sign function, b) Friction curve with more accurate modeling of friction at low speeds, c) total friction curve (viscous+Coulomb) assuming friction is modeled as sign function, d) total friction curve with more accurate modeling at low speeds. (hint: search Stribeck friction on the internet)
+*** Coulomb friction
+Coulomb friction is given as:
+\begin{equation}
+T_c = \mu_k \text{sign}(\omega)
+\end{equation}
+
+We can implement this like:
+#+begin_src matlab :session :exports code :results none
+coulomb = @(o) mu_k*sign(o);
+#+end_src
+
+*** Viscous friction
+Viscous friction is given as:
+\begin{equation}
+T_v = B_e \omega
+\end{equation}
+
+We can implement this like:
+#+begin_src matlab :session :exports code :results none
+viscous = @(o) B_e*o;
+#+end_src
+*** Stribeck friction
+Stribeck friction is given as[fn:stribeck]:
+\begin{equation}
+T_s =
+\sqrt{2e}(T_\text{brk} - T_c)
+\exp\left(
+  -\left(
+    \frac{\omega}{\omega_\text{St}}
+  \right)^2
+\right)
+\frac{\omega}{\omega_\text{St}}
+\end{equation}
+We can implement this like:
+#+begin_src matlab :session :exports code :results none
+% Arbitrary values to model Stribeck friction
+T_brk = 1;
+omega_st = 0.2;
+
+stribeck = @(o) ...
+    sqrt(2*exp(1)) .* (T_brk - mu_k).*exp(-(o./omega_st).^2).*(o/omega_st);
+#+end_src
+[fn:stribeck] https://www.mathworks.com/help/physmod/simscape/ref/translationalfriction.html
+
+
+
+*** Plot
+Plotting the data:
+#+begin_src matlab :session :exports results :results file
+l_speed = linspace(min(speed), max(speed), 10000);
+f_name = 'fric2.svg';
+f = figure('visible', 'off');
+
+plot(l_speed, coulomb(l_speed), '-',...
+     'LineWidth', 2);
+hold on;
+plot(l_speed, coulomb(l_speed) + stribeck(l_speed), ':',...
+     'LineWidth', 2);
+plot(l_speed, coulomb(l_speed) + viscous(l_speed), '-.',...
+     'LineWidth', 2);
+plot(l_speed, coulomb(l_speed) + viscous(l_speed) + stribeck(l_speed), '--',...
+     'LineWidth', 2);
+scatter(speed, torque);
+hold off;
+
+zero_line = refline(0,0);
+zero_line.Color = 'k';
+zero_line.LineStyle = '--';
+title('Friction plot');
+ylabel('Torque (Nm)');
+xlabel('Angular Velocity (rad/s)');
+xlim([-10 10])
+
+l = legend(...
+    'Coulomb', ...
+    'Coulomb + Stribeck', ...
+    'Coulomb + Viscous', ...
+    'Coulomb + Viscous + Stribeck',...
+    'Measured data');
+set(l, ...
+    'location', 'southoutside',...
+    'color', 'none',...
+    'edgecolor', 'none');
+
+saveas(f, f_name);
+ans = f_name
+#+end_src
+
+#+RESULTS:
+[[file:fric2.svg]]
+
