@@ -274,3 +274,192 @@ ans = f_name
 #+RESULTS:
 [[file:fric2.svg]]
 
+* Identification of Equivalent Inertia
+First let's load the provided dataset:
+#+begin_src matlab :session :exports code :results none
+f_path = 'data/part_2/data5.mat';
+% data5.mat contains a variable called output
+load(f_path); 
+
+% Cut off first measurement to get even amount of data points.
+% First sample also appears to have a different sample rate.
+t = output.time(2:end);
+V_in = output.CH1in(2:end);
+theta_raw = output.CH1out(2:end);
+#+end_src
+
+The lab manual suggests to apply a low pass filter to the data, however let's first inspect the data's frequency content.
+#+begin_src matlab :session :exports both :results file
+f_name = 'fft_b.svg';
+fig = figure('visible', 'off');
+T_s = t(2) - t(1);
+f_s = 1/T_s;
+L = length(theta_raw);
+
+Y = fft(theta_raw);
+P2 = abs(Y/L);
+P1 = P2(1:L/2+1);
+P1(2:end-1) = 2*P1(2:end-1);
+f = f_s*(0:(L/2))/L;
+plot(f, P1, 'LineWidth', 2);
+xlabel('f (Hz)');
+title('FFT of raw data')
+saveas(fig, f_name);
+ans = f_name
+#+end_src
+
+#+RESULTS:
+[[file:fft_b.svg]]
+
+As can be seen, there are no frequencies even remotely close to the suggested $\SI{100}{\hertz}$ cutoff and therefore no filtering would be pointless.
+However, because the lab manual requests it, I will do so.
+#+begin_src matlab :session :exports code :results none
+[B, A] = butter(4, 100*2*T_s);
+theta = filtfilt(B, A, theta_raw);
+#+end_src
+
+Let's calculate $\omega$ and $\dot{\omega}$:
+#+begin_src matlab :session :exports code :results none
+d_theta = deriv(theta);
+d_t = deriv(t);
+omega = d_theta./d_t;
+d_omega = deriv(omega);
+omega_dot = d_omega./d_t;
+
+omega(abs(omega)<1E-1) = 0;
+omega_dot(abs(omega_dot)<1E-1) = 0;
+#+end_src
+
+Now we can plot our results:
+#+begin_src matlab :session :exports results :results file
+f_name = 't_sig.svg';
+f = figure('visible', 'off');
+
+tiledlayout(3,1);
+
+ax_theta = nexttile;
+plot(t, theta);
+ylabel('position (rad)');
+
+ax_omega = nexttile;
+plot(t, omega);
+ylabel('velocity (rad/s)');
+
+ax_omega_dot = nexttile;
+plot(t, omega_dot);
+ylabel('acceleration (rad/s^2)');
+xlabel('time (s)');
+
+% Link axes, restrict time axis to actual signal
+linkaxes([ax_theta ax_omega ax_omega_dot], 'x');
+ax_theta.XLim = [0.25 2]
+
+saveas(f, f_name);
+ans = f_name
+#+end_src
+
+#+RESULTS:
+[[file:t_sig.svg]]
+
+From the lab manual, the open loop equation of the system is:
+\begin{equation}
+S_g K_t V_\text{in}(t) - B_e \omega(t) - T_d(t) = J_e \dot{\omega}(t)
+\end{equation}
+
+Let's calculate each side of the equation:
+#+begin_src matlab :session :exports code :results none
+J_e = 0.00059054; % Value from prelab
+S_g = 0.887;
+K_t = 0.72;
+% No numbers for stribeck friction, try simple and total friction
+T_d_total = @(o) coulomb(o) + viscous(o);
+T_d_simple = @(o) coulomb(o);
+
+lhs_in = S_g*K_t*V_in - B_e*omega;
+lhs_total = lhs_in - T_d_total(omega);
+lhs_simple = lhs_in - T_d_simple(omega);
+rhs = J_e*omega_dot;
+#+end_src
+
+We can now plot the left and right hand sides of that equation.
+#+begin_src matlab :session :exports results :results file
+f_name = 'lhs_rhs.svg';
+f = figure('visible', 'off');
+plot(t, lhs_simple);
+hold on;
+plot(t, lhs_total);
+plot(t, rhs);
+hold off
+xlim([0.25 2])
+l = legend('lhs (simple friction)', 'lhs (total friction)', 'rhs');
+set(l, ...
+    'location', 'southoutside',...
+    'color', 'none',...
+    'edgecolor', 'none');
+title('Torque over time using calculated inertia')
+saveas(f, f_name);
+ans = f_name
+#+end_src
+
+#+RESULTS:
+[[file:lhs_rhs.svg]]
+
+Ideally, we could get a more accurate value for $J_e$ by minimizing the following:
+\begin{equation}
+\min_{J_e \in \mathbb{R}}
+\sum_i^N
+\left[
+S_g K_t V_\text{in}(i) - B_e \omega(i) - T_d(i) - J_e \dot{\omega}(i)
+\right]^2
+\end{equation}
+However, because the shape of the right hand side plot poorly matches the left hand side, we will weight the sum by the square of the left hand side:
+\begin{equation}
+\min_{J_e \in \mathbb{R}}
+\sum_i^N
+\left[
+S_g K_t V_\text{in}(i) - B_e \omega(i) - T_d(i)
+\right]^2
+\left[
+S_g K_t V_\text{in}(i) - B_e \omega(i) - T_d(i) - J_e \dot{\omega}(i)
+\right]^2
+\end{equation}
+
+#+begin_src matlab :session :exports both :results code
+min_func_simple = @(J) sum((lhs_simple.^2).*(lhs_simple - J*omega_dot).^2)
+min_func_total = @(J) sum((lhs_total.^2).*(lhs_total - J*omega_dot).^2)
+J_e_simple = fminsearch(min_func_simple, J_e);
+J_e_total = fminsearch(min_func_total, J_e);
+ans = [J_e_simple J_e_total]
+#+end_src
+
+#+RESULTS:
+| 0.00035709 | 0.00047958 |
+
+#+begin_src matlab :session :exports results :results file
+rhs_simple = J_e_simple*omega_dot;
+rhs_total = J_e_total*omega_dot;
+f_name = 'lhs_rhs_fitted.svg';
+f = figure('visible', 'off');
+plot(t, lhs_simple);
+hold on;
+plot(t, lhs_total);
+plot(t, rhs_simple);
+plot(t, rhs_total);
+hold off
+xlim([0.25 2])
+l = legend(...
+    'lhs (simple friction)', ...
+    'lhs (total friction)', ...
+    'rhs fit (simple friction)', ...
+    'rhs fit (total frictoin)');
+set(l, ...
+    'location', 'southoutside',...
+    'color', 'none',...
+    'edgecolor', 'none');
+title('Torque over time using fitted inertia')
+saveas(f, f_name);
+ans = f_name
+#+end_src
+
+#+RESULTS:
+[[file:lhs_rhs_fitted.svg]]
