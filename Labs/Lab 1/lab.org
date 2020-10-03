@@ -28,12 +28,20 @@
 
 #+BEGIN_EXPORT latex
 \begin{abstract}
-asdf here is an abstractllolololo
+The purpose of this report is to identify the physical parameters of ball screw driven linear stage.
+By identifying the transfer functions that dominate the behavior of the system, a simplified model and equation of motion is derived.
+By providing known inputs and measuring the output to the system, the model parameters can be tuned to create a virtual simulation of the system.
 \end{abstract}
 #+END_EXPORT
 
 Note: when not specified, all units are SI without prefixes.
+* Introduction
+Ball screw mechanisms are used anywhere rotary motion needs to be converted to linear motion in a very precise manner.
+Since the force is transferred by rolling elements, ball screws can have very little friction and are less dependent on lubrication.
+However, because the rolling surfaces have very tight tolerances, any abrasive or contaminant that gets into the tracks can cause damage.
+Because of their high precision, ball screw mechanisms are commonly used in many robotics and industrial manufacturing applications.
 * Identification of Friction Parameters
+<<sec:findfric>>
 ** To identify the Coulomb and viscous friction parameters, move the table at constant speeds and measure the voltage supplied to the amplifier (i.e. the current supplied to the motor to overcome the frictional torque). Convert the measured table speeds [mm/s] to angular velocity of the motor [rad/s] using the pitch of the ballscrew. Also calculate the corresponding motor current [A] and motor torque [Nm] from the measured voltage using the amplifier and motor gains. Plot the friction curve, i.e. torque [Nm] vs angular velocity [rad/s], for the positive and negative directions on the same plot.
 First let's load the each dataset and associate it with the correct angular velocity:
 #+begin_src matlab :session :exports both :results none
@@ -90,8 +98,10 @@ for i = 1:length(data)
 end
 #+end_src
 
-Now that we have the torques at each velocity, we can extract the data we want to plot:
-#+begin_src matlab :session :exports code :results none
+Plotting the data:
+#+begin_src matlab :session :exports results :results file
+f_name = 'fric1.svg';
+
 abs_speed = [];
 fw_torque = [];
 bw_torque = [];
@@ -103,11 +113,6 @@ end
 
 speed = [-flip(abs_speed) abs_speed];
 torque = [flip(bw_torque) fw_torque];
-#+end_src
-
-Plotting the data:
-#+begin_src matlab :session :exports results :results file
-f_name = 'fric1.svg';
 f = figure('visible', 'off');
 scatter(speed, torque);
 zero_line = refline(0,0);
@@ -124,23 +129,13 @@ ans = f_name
 #+RESULTS:
 [[file:fric1.svg]]
 ** Find the equivalent viscous damping constant ($B_e$) in [Nm/rad/s] by fitting straight lines to each direction of the friction curves and averaging the values of the slopes obtained for each of the lines.
-Fitting each side of the friction curve finding each slope:
+Fitting each side of the friction curve finding the average slope:
 #+begin_src matlab :session :exports both :results code
 [fp, ~] = polyfit(abs_speed, fw_torque, 1);
 [fm, ~] = polyfit(abs_speed, -bw_torque, 1);
 B_ep = fp(1);
 B_em = fm(1);
 
-ans = [B_ep B_em]
-#+end_src
-
-#+RESULTS:
-#+begin_src matlab
-| 0.010013 | 0.009973 |
-#+end_src
-
-Taking the average:
-#+begin_src matlab :session :exports both :results code
 B_e = mean([B_ep B_em]);
 
 ans = B_e % Nm/rad/s
@@ -150,8 +145,9 @@ ans = B_e % Nm/rad/s
 #+begin_src matlab
 0.009993
 #+end_src
+
 ** Obtain the Coulomb friction constant in each direction (i.e. $\mu_{k+}$ and $\mu_{k-}$) from the y-intercept of the fitted lines. Do you think it makes sense that $\mu_{k+}$ and $\mu_{k-}$ could have different magnitudes? Explain briefly. For simplicity average the magnitudes of $\mu_{k+}$ and $\mu{k-}$ and obtain a single Coulomb friction constant ($\mu_k$).
-Fitting each side of the friction curve and finding each intercept:
+Fitting each side of the friction curve and finding the average intercept:
 #+begin_src matlab :session :exports both :results code
 mu_kp = fp(2)
 mu_km = fm(2)
@@ -177,9 +173,9 @@ ans = mu_k %
 #+end_src
 
 We can see that $\mu_{k+} \approx \mu_{k-}$.
-There is a potential for $\mu_{k+}$ and $\mu_{k-}$ to be different since the engaged thread surface changes with the direction (i.e. positive face of the nut threads engages with negative face of the screw thread and vice versa).
-The thread surface imperfections of the may also be biased towards a certain direction, requiring less force to slide in one direction than the other.
-
+There is a potential for $\mu_{k+}$ and $\mu_{k-}$ to be different since the engaged rolling surface changes with the direction (i.e. load is distributed more towards one side of the track when moving in a one direction and vice versa).
+The surface imperfections of the screw or ball cage may also be biased towards a certain direction, requiring less force to roll in one direction than the other.
+ 
 However, given the closeness of the results and the assumption that the machine has run enough in both directions enough to evenly wear the threads, the observed difference is likely error from the curve fits exacerbated by the signal noise in the original data.
 
 ** Simple friction curves are usually described using the sign function as: $T_d = \mu_k \text{sign}(\omega)$. However, the sign function does not give an accurate description of the friction behavior at low speed region, i.e. $\omega \approx 0$. Can you briefly explain why? Roughly sketch the following curves on top of each other in one plot: a) Friction curve using sign function, b) Friction curve with more accurate modeling of friction at low speeds, c) total friction curve (viscous+Coulomb) assuming friction is modeled as sign function, d) total friction curve with more accurate modeling at low speeds. (hint: search Stribeck friction on the internet)
@@ -226,7 +222,6 @@ stribeck = @(o) ...
     sqrt(2*exp(1)) .* (T_brk - mu_k).*exp(-(o./omega_st).^2).*(o/omega_st);
 #+end_src
 [fn:stribeck] https://www.mathworks.com/help/physmod/simscape/ref/translationalfriction.html
-
 
 
 *** Plot
@@ -285,13 +280,14 @@ load(f_path);
 % First sample also appears to have a different sample rate.
 t = output.time(2:end);
 V_in = output.CH1in(2:end);
-theta_raw = output.CH1out(2:end);
+theta_raw = 2*pi/h_p * output.CH1out(2:end) / 1000; % rad/s
 #+end_src
 
 The lab manual suggests to apply a low pass filter to the data, however let's first inspect the data's frequency content.
-#+begin_src matlab :session :exports both :results file
+#+begin_src matlab :session :exports results :results file
 f_name = 'fft_b.svg';
-fig = figure('visible', 'off');
+fig = figure('visible', 'off',...
+             'Position', [0 0 600 300]);
 T_s = t(2) - t(1);
 f_s = 1/T_s;
 L = length(theta_raw);
@@ -311,10 +307,11 @@ ans = f_name
 #+RESULTS:
 [[file:fft_b.svg]]
 
-As can be seen, there are no frequencies even remotely close to the suggested $\SI{100}{\hertz}$ cutoff and therefore no filtering would be pointless.
+As can be seen, there are no frequencies even remotely close to the suggested $\SI{100}{\hertz}$ cutoff and therefore filtering would be pointless.
 However, because the lab manual requests it, I will do so.
 #+begin_src matlab :session :exports code :results none
-[B, A] = butter(4, 100*2*T_s);
+% Subtract 1E-5 to keep filter cutoff below Nyquist rate
+[B, A] = butter(4, 100*2*T_s - 1E-5);
 theta = filtfilt(B, A, theta_raw);
 #+end_src
 
@@ -326,6 +323,8 @@ omega = d_theta./d_t;
 d_omega = deriv(omega);
 omega_dot = d_omega./d_t;
 
+% Round small values to zero to prevent issues with
+% friction implementation
 omega(abs(omega)<1E-1) = 0;
 omega_dot(abs(omega_dot)<1E-1) = 0;
 #+end_src
@@ -371,13 +370,10 @@ Let's calculate each side of the equation:
 J_e = 0.00059054; % Value from prelab
 S_g = 0.887;
 K_t = 0.72;
-% No numbers for stribeck friction, try simple and total friction
-T_d_total = @(o) coulomb(o) + viscous(o);
-T_d_simple = @(o) coulomb(o);
+% No numbers for stribeck friction, using coulomb and viscous only
+T_d = @(o) coulomb(o);
 
-lhs_in = S_g*K_t*V_in - B_e*omega;
-lhs_total = lhs_in - T_d_total(omega);
-lhs_simple = lhs_in - T_d_simple(omega);
+lhs = S_g*K_t*V_in - B_e*omega - T_d(omega);
 rhs = J_e*omega_dot;
 #+end_src
 
@@ -385,13 +381,12 @@ We can now plot the left and right hand sides of that equation.
 #+begin_src matlab :session :exports results :results file
 f_name = 'lhs_rhs.svg';
 f = figure('visible', 'off');
-plot(t, lhs_simple);
+plot(t, lhs);
 hold on;
-plot(t, lhs_total);
 plot(t, rhs);
 hold off
 xlim([0.25 2])
-l = legend('lhs (simple friction)', 'lhs (total friction)', 'rhs');
+l = legend('lhs', 'rhs');
 set(l, ...
     'location', 'southoutside',...
     'color', 'none',...
@@ -404,54 +399,38 @@ ans = f_name
 #+RESULTS:
 [[file:lhs_rhs.svg]]
 
-Ideally, we could get a more accurate value for $J_e$ by minimizing the following:
+We can get a more accurate value for $J_e$ by minimizing the following:
 \begin{equation}
 \min_{J_e \in \mathbb{R}}
 \sum_i^N
-\left[
-S_g K_t V_\text{in}(i) - B_e \omega(i) - T_d(i) - J_e \dot{\omega}(i)
-\right]^2
-\end{equation}
-However, because the shape of the right hand side plot poorly matches the left hand side, we will weight the sum by the square of the left hand side:
-\begin{equation}
-\min_{J_e \in \mathbb{R}}
-\sum_i^N
-\left[
-S_g K_t V_\text{in}(i) - B_e \omega(i) - T_d(i)
-\right]^2
 \left[
 S_g K_t V_\text{in}(i) - B_e \omega(i) - T_d(i) - J_e \dot{\omega}(i)
 \right]^2
 \end{equation}
 
 #+begin_src matlab :session :exports both :results code
-min_func_simple = @(J) sum((lhs_simple.^2).*(lhs_simple - J*omega_dot).^2)
-min_func_total = @(J) sum((lhs_total.^2).*(lhs_total - J*omega_dot).^2)
-J_e_simple = fminsearch(min_func_simple, J_e);
-J_e_total = fminsearch(min_func_total, J_e);
-ans = [J_e_simple J_e_total]
+min_func = @(J) sum((lhs - J*omega_dot).^2)
+J_e_fitted = fminsearch(min_func, J_e);
+ans = J_e_fitted
 #+end_src
 
 #+RESULTS:
-| 0.00035709 | 0.00047958 |
+#+begin_src matlab
+0.00072341
+#+end_src
 
+Plotting each curve with using our new $J_e$:
 #+begin_src matlab :session :exports results :results file
-rhs_simple = J_e_simple*omega_dot;
-rhs_total = J_e_total*omega_dot;
+rhs_fitted = J_e_fitted*omega_dot;
 f_name = 'lhs_rhs_fitted.svg';
 f = figure('visible', 'off');
-plot(t, lhs_simple);
+plot(t, lhs);
 hold on;
-plot(t, lhs_total);
-plot(t, rhs_simple);
-plot(t, rhs_total);
+plot(t, rhs_fitted);
 hold off
 xlim([0.25 2])
-l = legend(...
-    'lhs (simple friction)', ...
-    'lhs (total friction)', ...
-    'rhs fit (simple friction)', ...
-    'rhs fit (total frictoin)');
+l = legend('lhs', ...
+           sprintf('rhs fit (J=%f)', J_e_fitted));
 set(l, ...
     'location', 'southoutside',...
     'color', 'none',...
@@ -463,3 +442,252 @@ ans = f_name
 
 #+RESULTS:
 [[file:lhs_rhs_fitted.svg]]
+* Measurement of Open Loop Frequency Response Function
+** Discussion Question
+If we assume no viscous or Coulomb friction, our equation of motion becomes a seperable second order differential equation:
+\begin{equation}
+J_e \ddot{\theta} = S_g K_t V_\text{in}(t)
+\end{equation}
+If we solve for $\theta$ given $V_\text{in}(t) = A \sin(\omega t)$, we get a solution in the form:
+#+NAME: eqn:sol_no_fric
+\begin{equation}
+\theta(t) = C_1 \sin(\omega t) + C_2 t + C_3
+\end{equation}
+where C_n are constants[fn:initial_conditions1].
+[fn:initial_conditions1] Assuming zero initial conditions, $C_1 \neq 0$, $C_2 \neq 0$
+
+
+
+
+Intuitively, this can be interpreted by understanding that the input voltage (and hence torque) spend equal amounts of time above and below zero.
+In the positive half of the cycle, momentum is built up depending on $J_e$, which then has to be cancelled out during the negative half of the cycle before $\omega$ can go negative, hence $\theta$ will not return to it's original position at the end of a cycle.
+
+However, in reality viscous friction cannot be ignored like this and solving for $\theta$ including viscous friction yields a solution in the form:
+\begin{equation}
+\theta(t) = C_1 \sin(\omega t) + C_2 \cos(\omega t) + C_3 + C_4 \exp(-C_5 t)
+\end{equation}
+The addition of a cosine indicates that there will be phase lag in the between $V_\text{in}$ and $\theta$, and the exponential shows that the linear portion of Eq. [[eqn:sol_no_fric]] will eventually decay.
+
+** Data Analysis
+<<sec:openloop>>
+First let's load the each dataset and associate it with the correct frequency:
+#+begin_src matlab :session :exports both :results none
+path = 'data/part_3';
+files = dir(fullfile(path, '*.mat'));
+
+data = {};
+for i = 1:length(files)
+    f_name = files(i).name;
+    f_path = fullfile(path, f_name);
+    freq = sscanf(f_name, '%dHz.mat');
+    % each .mat file contains a variable called output
+    load(f_path); 
+    data{i, 1} = freq;
+    d = output;
+    % First measurement has a different sample rate
+    t = d.time(2:end);
+    V_in = d.CH1in(2:end);
+    theta = 2*pi/h_p * d.CH1out(2:end) / 1000;
+    data{i, 2} = t;
+    data{i, 3} = V_in;
+    data{i, 4} = theta;
+end
+% Sort data by frequency
+data = sortrows(data, 1);
+#+end_src
+Let's plot one of the input waveforms:
+#+begin_src matlab :session :exports results :results file
+f_name = 'freq_in_sample.svg';
+f = figure('visible', 'off',...
+           'Position', [0 0 600 300]);
+plot(output.time, output.CH1in);
+title(sprintf('Input signal (%dHz)', freq))
+saveas(f, f_name);
+ans = f_name
+#+end_src
+
+#+RESULTS:
+[[file:freq_in_sample.svg]]
+
+As can be seen, the input voltage is actually a sine wave superimposed on top of a constant voltage.
+This is to reduce zero crossings in the velocity of the table.
+Since we do not know the parameters for Stribeck friction, our model of the system may not accurately represent the behavior when the velocity approaches 0.
+There may also be some backlash in the ball screw, meaning that there will be a portion of time where no force is transferred near a velocity zero crossing.
+By applying the sine wave on top of a constant voltage, both of these effects are mitigated.
+
+Let's calculate $\omega(t)$ for each dataset.
+#+begin_src matlab :session :exports code :results none
+for i = 1:length(data)
+    theta = data{i, 4};
+    t = data{i, 2};
+    dtheta = deriv(theta);
+    dt = deriv(t);
+    omega = dtheta./dt;
+    data{i, 5} = omega;
+end
+#+end_src
+
+Let's plot the angular velocity of one of the datasets:
+#+begin_src matlab :session :exports results :results file
+f_name = 'omega_sample.svg'
+f = figure('visible', 'off',...
+           'Position', [0 0 600 300]);
+plot(t, omega);
+title(sprintf('Angular velocity (%dHz)', data{i, 1}));
+saveas(f, f_name);
+ans = f_name
+#+end_src
+
+#+RESULTS:
+[[file:omega_sample.svg]]
+The plot shows a ringing that occurs even during the constant voltage portions of the input signal.
+To isolate the original signal, we will apply a bandpass filter to our data.
+
+First, let's cut out all the data we're not interested in.
+#+begin_src matlab :session :exports both :results none
+% Sine wave input always starts at 0.5s and lasts for 1s
+% Select time window with a little margin
+t_margin = 0.01;
+t_start = 0.5 + t_margin;
+t_end = 1.5 - t_margin;
+
+for i = 1:length(data)
+    t = data{i, 2};
+    omega = data{i, 5};
+    V_in = data{i, 3};
+    T_s = t(2) - t(1);
+    start_idx = round(t_start/T_s);
+    end_idx = round(t_end/T_s);
+    t_sig = t(start_idx:end_idx);
+    omega_sig = omega(start_idx:end_idx);
+    V_in_sig = V_in(start_idx:end_idx);
+
+    % Center signal to remove DC component
+    omega_sig_avg = mean(omega_sig);
+    omega_sig = omega_sig - omega_sig_avg;
+    V_in_sig_avg = mean(V_in_sig);
+    V_in_sig = V_in_sig - V_in_sig_avg;
+    data{i, 6} = t_sig;
+    data{i, 7} = omega_sig;
+    data{i, 8} = V_in_sig;
+end
+#+end_src
+
+Applying a band pass filter to all the data:
+#+begin_src matlab :session :exports both :results none
+% Allow +- f_margin Hz around center frequency of filter
+f_margin = 0.75;
+
+for i = 1:length(data)
+    t_sig = data{i, 6};
+    omega_sig = data{i, 7};
+    freq = data{i, 1};
+    T_s = t_sig(2) - t_sig(1);
+    f_s = 1/T_s;
+    omega_fltd = bandpass(...
+        omega_sig,...
+        [freq - f_margin, freq + f_margin],...
+        f_s);
+    data{i, 9} = omega_fltd;
+end
+#+end_src
+
+Now we can extract the find the magnitude ratio and phase difference for each dataset.
+#+begin_src matlab :session :exports both :results none
+% Get zero crossing indices in an array
+zci = @(v) find(diff(sign(v)));
+for i = 1:length(data)
+    freq = data{i, 1};
+    t_sig = data{i, 6};
+    omega_fltd = data{i, 9};
+    omega_sig = data{i, 7};
+    V_in_sig = data{i, 8};
+    mag_omega = max(omega_fltd);
+    mag_V_in = max(V_in_sig);
+    %mag_V_in = 1;
+    mag_ratio = mag_omega/mag_V_in;
+
+    T_s = t_sig(2) - t_sig(1);
+    % Find zero crossings
+    omega_zcis = zci(omega_fltd);
+    V_in_zcis = zci(V_in_sig);
+    % omega should always lag V_in
+    if omega_zcis(1) < V_in_zcis
+        omega_zcis = omega_zcis(2:end);
+    end
+    % Ensure zci arrays are same length
+    zci_len = min(length(omega_zcis), length(V_in_zcis));
+    omega_zcis = omega_zcis(1:zci_len);
+    V_in_zcis = V_in_zcis(1:zci_len);
+    % Get average time delay between signals
+    delta_zci = mean(V_in_zcis - omega_zcis);
+    t_d = delta_zci * T_s;
+    % Calculate phase delay
+    phi = 2*pi*freq*t_d;
+
+    data{i, 10} = mag_ratio;
+    data{i, 11} = phi;
+end
+#+end_src
+
+Plotting our data against the theoretical transfer function derived from the prelab[fn:values]:
+#+begin_src matlab :session :exports results :results file
+f_name = 'bode_comp.svg';
+freqs = [];
+phis = [];
+mag_ratios = [];
+
+for i = 1:length(data)
+    freqs = [freqs data{i, 1}];
+    phis = [phis data{i, 11}];
+    mag_ratios = [mag_ratios data{i, 10}];
+end
+
+phis = phis*180/pi;
+freqs = freqs*2*pi;
+mag_ratios = 20*log10(mag_ratios);
+
+M = tf([1], [J_e B_e])
+vin_to_omega_simp = K_t*M*S_g;
+f = figure('visible', 'off');
+bodeplot(vin_to_omega_simp, {0, 1000});
+hold on;
+h = get(f, 'Children');
+
+mag = h(3);
+phase = h(2);
+scatter(mag, freqs, mag_ratios)
+scatter(phase, freqs, phis)
+phase.YLim = [min(phis) 0];
+l = legend(mag, 'Theoretical', 'Measured data');
+set(l, 'color', 'none', 'edgecolor', 'none');
+hold off;
+
+saveas(f, f_name);
+ans = f_name
+#+end_src
+
+#+RESULTS:
+[[file:bode_comp.svg]]
+
+Note that the data at $\SI{1}{\hertz}$ was rather poor, hence the anomalous magnitude reading.
+The ringing oscillation in all the data made it rather hard to determine the phase lag accurately, even after filtering.
+Manual inspection of the data at each frequency shows that the computed results are reasonable.
+
+[fn:values] Using the values determined in this lab.
+
+* Conclusions
+Understanding a mathmatical model of the system of interest beforehand can be incredibly helpful in figuring out what to do to characterize it.
+Having a model allows one to know which parameters are unknowns and how to approach isolating and finding those values.
+However, an it is generally hard to completely model the behavior of a physical system, and even though we used a further simplified version of the original model provided, it is unlikely that the full model would have exhibited the noise shown in the data.
+
+There is significant noise in the data for Section [[sec:findfric]], this is presumably caused by a poorly tuned feedback loop or the current amplifier struggling to handle the sudden changes in load.
+
+Stribeck friction was not measured in this lab, however given that there should be very little sliding friction between the rolling elements and the screw surface, it is unlikely that it has a significant effect.
+
+The length of the sine wave input in Section [[sec:openloop]] is less than ideal for data analysis, especially at lower frequencies.
+It would have been better to have a longer signal, perhaps with less bias so that the machine can travel for a longer time before reaching its limit.
+Furthermore, the ringing shown in the data suggests that there is may be some kind of resonance happening in the machine that may not be captured in our model.
+
+It's not entirely clear why the phase lag data in Section [[sec:openloop]] is consistently lower than expected.
+Visual inspection of both the raw and unfiltered data suggest that the calculations are correct, there may be phase delays in other parts of the system that are not captured.
