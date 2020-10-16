@@ -1,0 +1,169 @@
+#+TITLE: MECH 467 Tutorial 2:
+#+AUTHOR: Jasper Chan - 37467164
+
+#+OPTIONS: toc:nil
+
+#+LATEX_HEADER: \definecolor{bg}{rgb}{0.95,0.95,0.95}
+#+LATEX_HEADER: \setminted{frame=single,bgcolor=bg,samepage=true}
+#+LATEX_HEADER: \setlength{\parindent}{0pt}
+#+LATEX_HEADER: \usepackage{float}
+#+LATEX_HEADER: \usepackage{svg}
+#+LATEX_HEADER: \usepackage{cancel}
+#+LATEX_HEADER: \usepackage{amssymb}
+#+LATEX_HEADER: \newcommand{\Lagr}{\mathcal{L}}
+#+LATEX_HEADER: \newcommand{\Lagri}{\mathcal{L}^{-1}}
+#+LATEX_HEADER: \renewcommand\arraystretch{2}
+
+Find the response $y(t)$ of a system $G(s)$ for a given input $r(t)$
+
+#+ATTR_LATEX: :environment longtable :align c | c | c 
+| Transfer Function $G(s)$    | Initial Condition $y(0)$ |  Input $r(t)$ |
+|-----------------------------+--------------------------+---------------|
+| $\dfrac{3}{s + 3}$          |                       10 |             6 |
+| $\dfrac{1}{s + 10}$         |                        0 | $3 \cos{10t}$ |
+| $\dfrac{-4s + 20}{s + 300}$ |                        0 |            10 |
+| $\dfrac{3}{s^2 + 0.5s + 4}$ |  $y(0) = \dot{y}(0) = 0$ |             2 |
+* $G(s) = \dfrac{3}{s + 3}$, $y(0) = 10$, $r(t) = 6$
+First let's take the Laplace transform of our input:
+\begin{equation}
+\Lagr\{r(t)\} = R(s) = \frac{6}{s}
+\end{equation}
+Now if we rearrange the equation for $G(s)$ and take the inverse Laplace transform, we can get it in differential equation form:
+\begin{align}
+G(s) = \frac{Y(s)}{R(s)} &= \frac{3}{s + 3} \\
+sY(s) + 3Y(s) &= 3R(s) \\
+\Lagri\{sY(s) + 3Y(s)\} &= \Lagri\{3R(s)\} \\
+\dot{y} + 3y &= 3r(t)
+\end{align}
+Taking the Laplace transform now will give us a way to input the initial condition
+\begin{align}
+\Lagr\{\dot{y} + 3y\} &= \Lagr\{3r(t)\} \\
+sY(s) - y(0) + 3Y(s) &= 3R(s)
+\end{align}
+Collecting like terms and solving for $Y(s)$:
+\begin{align}
+Y(s) &= \frac{3R(s) + y(0)}{s + 3} \\
+&= \underbrace{\frac{18}{s(s + 3)}}_{Y_1(s)} + \frac{10}{s + 3}
+\end{align}
+Doing the partial fraction expansion for $Y_1(s)$ we get:
+\begin{equation}
+Y_1(s) = \frac{A}{s + 3} + \frac{B}{s}
+\end{equation}
+Solving for $A$ and $B$:
+\begin{align*}
+A &= \lim_{s \to -3} (s + 3)Y_1(s) & B &= \lim_{s \to 0} (s)Y_1(s) \\
+&= \lim_{s \to -3} \frac{18}{s} & &= \lim_{s \to 0} \frac{18}{s + 3} \\
+&= -6 & &= 6
+\end{align*}
+Subbing in we get:
+\begin{equation}
+Y(s) = \frac{4}{s + 3} + \frac{6}{s}
+\end{equation}
+Taking the inverse transform:
+\begin{align}
+\Lagri\{Y(s)\} &= \Lagri\left\{\frac{4}{s + 3} + \frac{6}{s}\right\} \\
+y(t) &= 4e^{-3t} + 6
+\end{align}
+
+* $G(s) = \dfrac{1}{s + 10}$, $y(0) = 0$, $r(t) = 3 \cos{10t}$
+First let's take the Laplace transform of our input:
+\begin{equation}
+\Lagr\{r(t)\} = R(s) = \frac{3s}{s^2 + 100}
+\end{equation}
+Since we have zero initial conditions, we can don't need to find the differential equation of our system.
+\begin{equation}
+Y(s) = G(s) R(s) = \frac{1}{s + 10} \frac{3s}{s^2 + 100}
+\end{equation}
+Taking the partial fraction decomposition:
+\begin{equation}
+Y(s) = \frac{A}{s + 10} + \frac{Bs + C}{s^2 + 100}
+\end{equation}
+Solving for $A$:
+\begin{align*}
+A &= \lim_{s \to -10} (s + 10)Y(s) \\
+&= \lim_{s \to -10} \frac{3s}{s^2 + 100} \\
+&= \frac{-3}{20}
+\end{align*}
+Solving for $B$ and $C$:
+\begin{align*}
+3s &= A(s^2 + 100) + (Bs + C)(s + 10) \\
+&= A(s^2 + 100) + (Bs + C)(s + 10) \\
+&= As^2 + 100A+ Bs^2 + 10Bs + Cs + 10C \\
+0s^2 + 3s + 0 &= (A + B)s^2 + (10B + C)s + (100A + 10C)
+\end{align*}
+\begin{align*}
+A + B &= 0  & 100A + 10C &= 0 \\
+B &= -A  & C &= -10A \\
+&= \frac{3}{20} & &= \frac{3}{2}
+\end{align*}
+Subbing in our values:
+\begin{equation}
+Y(s) = \frac{-3}{20}\frac{1}{s + 10} + \frac{3}{20}\frac{s}{s^2 + 100} + \frac{3}{2}\frac{1}{s^2 + 100}
+\end{equation}
+Rearranging and taking the inverse transform:
+\begin{align}
+\Lagri\{Y(s)\} &= \Lagri\left\{\frac{-3}{20}\frac{1}{s - (-10)} + \frac{3}{20}\frac{s}{s^2 + 10^2} + \frac{0.3}{2}\frac{10}{s^2 + 10^2}\right\} \\
+y(t) &= \frac{-3}{20}e^{-10t} + \frac{3}{20}\cos{10t} + \frac{3}{20}\sin{10t}
+\end{align}
+
+* $G(s) = \dfrac{-4s + 20}{s + 300}$, $y(0) = 0$, $r(t) = 10$
+First let's take the Laplace transform of our input:
+\begin{equation}
+\Lagr\{r(t)\} = R(s) = \frac{10}{s}
+\end{equation}
+Since we have zero initial conditions, we can don't need to find the differential equation of our system.
+\begin{equation}
+Y(s) = G(s) R(s) = \frac{-4s + 20}{s + 300} \frac{10}{s}
+\end{equation}
+Taking the partial fraction decomposition:
+\begin{equation}
+Y(s) = \frac{A}{s + 300} + \frac{B}{s}
+\end{equation}
+Solving for $A$ and $B$:
+\begin{align*}
+A &= \lim_{s \to -300} (s + 300)Y(s) & B &= \lim_{s \to 0} (s)Y(s) \\
+&= \lim_{s \to -300} (-4s + 20)\frac{10}{s} & &= \lim_{s \to 0} \frac{-4s + 20}{s + 300}10 \\
+&= \frac{-122}{3} & &= \frac{2}{3}
+\end{align*}
+Subbing in our values and taking the inverse laplace transform:
+\begin{align}
+\Lagri\{Y(s)\} &= \Lagri\left\{\frac{-122}{3} \frac{1}{s + 300} + \frac{2}{3} \frac{1}{s}\right\} \\
+y(t) &= \frac{-122}{3} e^{-300t} + \frac{2}{3}
+\end{align}
+
+* $G(s) = \dfrac{3}{s^2 + 0.5s + 4}$, $y(0) = \dot{y}(0) = 0$, $r(t) = 2$
+First let's take the Laplace transform of our input:
+\begin{equation}
+\Lagr\{r(t)\} = R(s) = \frac{2}{s}
+\end{equation}
+Since we have zero initial conditions, we can don't need to find the differential equation of our system.
+\begin{equation}
+Y(s) = \frac{3}{s^2 + 0.5s + 4} \frac{2}{s}
+\end{equation}
+** Canned Response
+For a second order transfer function of the form:
+#+NAME: eqn:2ndorder
+\begin{equation}
+\frac{\omega_n^2}{s^2 + 2\zeta\omega_n s + \omega_n^2}
+\end{equation}
+if the input is step function, the response is always of the form:
+\begin{equation}
+y(t) = 1 - \frac{1}{\sqrt{1 - \zeta^2}}e^{-\zeta\omega_n t} \sin{(\omega_d t + \phi)}
+\end{equation}
+Where:
+\begin{align*}
+\omega_d &= \omega_n \sqrt{1 - \zeta^2} & \phi &= \tan^{-1}\left(\frac{\sqrt{1 - \zeta^2}}{\zeta}\right)
+\end{align*}
+Rearranging our equation to match Eq. [[eqn:2ndorder]]:
+\begin{equation}
+Y(s) = \frac{6}{4} \frac{1}{s} \frac{(2)^2}{s^2 + 2(0.125)(2)s + (2)^2} 
+\end{equation}
+We can extract our values for $\omega_n$, $\zeta$ and calculate $omega_d$, $\phi$
+\begin{align*}
+\omega_n &= 2 & \zeta &= 0.125 \\
+\omega_d &= 2\sqrt{1 - 0.125^2} & \phi &= \tan^{-1}\left(\frac{\sqrt{1 - 0.125^2}}{0.125}\right)
+\end{align*}
+Subbing in our values to the known response:
+\begin{equation}
+y(t) = 1 - \frac{1}{\sqrt{1 - 0.125^2}}e^{-0.25 t} \sin{\left(2\sqrt{1 - 0.125^2} t + \tan^{-1}\left(\frac{\sqrt{1 - 0.125^2}}{0.125}\right)\right)}
+\end{equation}
