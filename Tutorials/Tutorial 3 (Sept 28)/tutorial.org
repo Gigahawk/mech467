@@ -1,0 +1,167 @@
+#+TITLE: MECH 467 Tutorial 3
+#+AUTHOR: Jasper Chan - 37467164
+
+#+OPTIONS: toc:nil
+
+#+LATEX_HEADER: \definecolor{bg}{rgb}{0.95,0.95,0.95}
+#+LATEX_HEADER: \setminted{frame=single,bgcolor=bg,samepage=true}
+#+LATEX_HEADER: \setlength{\parindent}{0pt}
+#+LATEX_HEADER: \usepackage{float}
+#+LATEX_HEADER: \usepackage{svg}
+#+LATEX_HEADER: \usepackage{cancel}
+#+LATEX_HEADER: \usepackage{amssymb}
+#+LATEX_HEADER: \usepackage{mathtools, nccmath}
+#+LATEX_HEADER: \newcommand{\Lagr}{\mathcal{L}}
+#+LATEX_HEADER: \newcommand{\Lagri}{\mathcal{L}^{-1}}
+#+LATEX_HEADER: \renewcommand\arraystretch{2}
+
+* Find the steady state response $y_{ss}$ and steady state error $e_{ss}$ given a system $G(s)$ for a given input $r(t)$
+
+#+ATTR_LATEX: :environment longtable :align c | c 
+| Transfer Function $G(s)$    | Input $r(t)$ |
+|-----------------------------+--------------|
+| $\dfrac{3}{s + 3}$          |            6 |
+| $\dfrac{-4s + 20}{s + 300}$ |           10 |
+| $\dfrac{3}{s^2 + 0.5s + 4}$ |            2 |
+| $\dfrac{3}{s^2 + 0.5s + 4}$ |           2t |
+| $\dfrac{10}{s^2 + 3s + 10}$ |           2t |
+** $G(s) = \dfrac{3}{s + 3}$, $r(t) = 6$
+First let's take the Laplace transform of our input:
+\begin{equation}
+\Lagr\{r(t)\} = R(s) = \frac{6}{s}
+\end{equation}
+
+The final value theorem for steady state response is:
+\begin{equation}
+y_{ss} = \lim_{s \to 0} sG(s)R(s)
+\end{equation}
+Subbing in our values and solving:
+\begin{align}
+y_{ss} &= \lim_{s \to 0} s \frac{3}{s + 3} \frac{6}{s} \\
+&= \lim_{s \to 0}  \frac{3}{s + 3}6 \\
+&= 6
+\end{align}
+The final value theorem for steady state error is:
+\begin{equation}
+e_{ss} = \lim_{s \to 0} s[1 - G(s)]R(s)
+\end{equation}
+Subbing in our values and solving:
+\begin{align}
+e_{ss} &= \lim_{s \to 0} s \left[1 - \frac{3}{s + 3}\right] \frac{6}{s} \\
+&= \lim_{s \to 0} \left[1 - \frac{3}{s + 3}\right] 6 \\
+&= 0
+\end{align}
+** $G(s) = \dfrac{-4s + 20}{s + 300}$, $r(t) = 10$
+First let's take the Laplace transform of our input:
+\begin{equation}
+\Lagr\{r(t)\} = R(s) = \frac{10}{s}
+\end{equation}
+Subbing in our values and solving for steady state response:
+\begin{align}
+y_{ss} &= \lim_{s \to 0} s \frac{-4s + 20}{s + 300} \frac{10}{s} \\
+&= \lim_{s \to 0} \frac{-4s + 20}{s + 300} 10 \\
+&= \frac{2}{3}
+\end{align}
+Subbing in our values and solving for steady state error:
+\begin{align}
+e_{ss} &= \lim_{s \to 0} s \left[1 - \frac{-4s + 20}{s + 300}\right] \frac{10}{s} \\
+&= \lim_{s \to 0} \left[1 - \frac{-4s + 20}{s + 300}\right] 10 \\
+&= \frac{28}{3}
+\end{align}
+** $G(s) = \dfrac{3}{s^2 + 0.5s + 4}$, $r(t) = 2$
+First let's take the Laplace transform of our input:
+\begin{equation}
+\Lagr\{r(t)\} = R(s) = \frac{10}{s}
+\end{equation}
+Subbing in our values and solving for steady state response:
+\begin{align}
+y_{ss} &= \lim_{s \to 0} s \frac{3}{s^2 + 0.5s + 4} \frac{2}{s} \\
+&= \lim_{s \to 0} \frac{3}{s^2 + 0.5s + 4} 2 \\
+&= \frac{3}{2}
+\end{align}
+Subbing in our values and solving for steady state error:
+\begin{align}
+e_{ss} &= \lim_{s \to 0} s \left[1 - \frac{3}{s^2 + 0.5s + 4}\right] \frac{2}{s} \\
+&= \lim_{s \to 0} \left[1 - \frac{3}{s^2 + 0.5s + 4}\right] 2 \\
+&= \frac{1}{2}
+\end{align}
+** $G(s) = \dfrac{3}{s^2 + 0.5s + 4}$, $r(t) = 2t$
+First let's take the Laplace transform of our input:
+\begin{equation}
+\Lagr\{r(t)\} = R(s) = \frac{2}{s^2}
+\end{equation}
+Subbing in our values and solving for steady state response:
+\begin{align}
+y_{ss} &= \lim_{s \to 0} s \frac{3}{s^2 + 0.5s + 4} \frac{2}{s^2} \\
+&= \lim_{s \to 0} \frac{3}{s^2 + 0.5s + 4} \frac{2}{s} \\
+&= \infty
+\end{align}
+Subbing in our values and solving for steady state error:
+\begin{align}
+e_{ss} &= \lim_{s \to 0} s \left[1 - \frac{3}{s^2 + 0.5s + 4}\right] \frac{2}{s^2} \\
+&= \lim_{s \to 0} \left[1 - \frac{3}{s^2 + 0.5s + 4}\right] \frac{2}{s} \\
+&= \infty
+\end{align}
+** $G(s) = \dfrac{10}{s^2 + 3s + 10}$, $r(t) = 2t$
+First let's take the Laplace transform of our input:
+\begin{equation}
+\Lagr\{r(t)\} = R(s) = \frac{2}{s^2}
+\end{equation}
+Subbing in our values and solving for steady state response:
+\begin{align}
+y_{ss} &= \lim_{s \to 0} s \frac{10}{s^2 + 3s + 10} \frac{2}{s^2} \\
+&= \lim_{s \to 0} \frac{10}{s^2 + 3s + 10} \frac{2}{s} \\
+&= \infty
+\end{align}
+Subbing in our values and solving for steady state error:
+\begin{align}
+e_{ss} &= \lim_{s \to 0} s \left[1 - \frac{10}{s^2 + 3s + 10}\right] \frac{2}{s^2} \\
+&= \lim_{s \to 0} \left[1 - \frac{10}{s^2 + 3s + 10}\right] \frac{2}{s} \\
+&= \lim_{s \to 0} \frac{s^2 + 3s}{s^2 + 3s + 10} \frac{2}{s} \\
+&= \lim_{s \to 0} \frac{s + 3}{s^2 + 3s + 10} 2 \\
+&= \frac{3}{5}
+\end{align}
+* Find the output as a function of the reference input and disturbance for the block diagram in Figure [[fig:blkdg]]
+<<sec:findoutput>>
+#+begin_src matlab :session :results none :exports none :eval never-export
+simulink
+#+end_src
+#+begin_src matlab :session :results file :exports results
+open_system('fig1');
+print -dsvg -s 'fig1.svg';
+ans = 'fig1.svg'
+#+end_src
+
+#+CAPTION: Block diagram for Section [[sec:findoutput]] and [[sec:findtfr]]
+#+NAME: fig:blkdg
+#+RESULTS:
+[[file:fig1.svg]]
+
+\begin{align}
+y &= G_2q \label{eq:y1}\\
+q &= v - Dd - H_1y \label{eq:q1}\\
+v &= (u + Fq - H_2y)G_1 \label{eq:v1}\\
+q &= (u + Fq - H_2y)G_1 - Dd - H_1y & \eqref{eq:v1} \to \eqref{eq:q1}\\
+&= G_1u + G_1Fq - G_1H_2y - Dd - H_1y \\
+&= G_1u + G_1Fq - Dd - (G_1 H_2 + H_1)y \\
+q(1 - G_1F) &= G_1u - Dd - (G_1 H_2 + H_1)y \\
+q &= \frac{G_1u - Dd - (G_1 H_2 + H_1)y}{1 - G_1F} \label{eq:q2}\\
+y &= G_2\frac{G_1u - Dd - (G_1 H_2 + H_1)y}{1 - G_1F} & \eqref{eq:q2} \to \eqref{eq:y1}\\
+&= \medmath{G_2\frac{G_1u}{1 - G_1F} - G_2\frac{Dd}{1 - G_1F} - G_2\frac{(G_1 H_2 + H_1)y}{1 - G_1F}} \\
+\medmath{y\left(1 + G_2\frac{(G_1 H_2 + H_1)}{1 - G_1F}\right)} &= G_2\frac{G_1u}{1 - G_1F} - G_2\frac{Dd}{1 - G_1F} \\
+\medmath{y\left(\frac{(1 - G_1F) + G_2(G_1 H_2 + H_1)}{1 - G_1F}\right)} &= G_2\frac{G_1u}{1 - G_1F} - G_2\frac{Dd}{1 - G_1F} \\
+\medmath{y\left(1 - G_1F + G_2(G_1 H_2 + H_1)\right)} &= G_2G_1u - G_2Dd \\
+\nonumber\\
+y &= \medmath{
+  \underbrace{\frac{G_2 G_1}{1 - G_1 F + G_2(G_1 H_2 + H_1)}}_{y(s)/u(s)}u +
+  \underbrace{\frac{G_2 D}{1 - G_1F + G_2(G_1 H_2 + H_1)}}_{y(s)/d(s)}d
+} \label{eq:y}
+\end{align}
+* Express the transfer function and disturbance transfer function for the block diagram in Figure [[fig:blkdg]]
+<<sec:findtfr>>
+
+Referring to Eq. \ref{eq:y}:
+\begin{align}
+G_u &= y(s)/u(s) = \frac{G_2 G_1}{1 - G_1 F + G_2(G_1 H_2 + H_1)} \\
+G_d &= y(s)/d(s) = \frac{G_2 D}{1 - G_1F + G_2(G_1 H_2 + H_1)}
+\end{align}
