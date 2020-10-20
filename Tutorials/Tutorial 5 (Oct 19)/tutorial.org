@@ -1,0 +1,268 @@
+#+TITLE: MECH 467 Tutorial 5
+#+AUTHOR: Jasper Chan - 37467164
+
+#+OPTIONS: toc:nil
+
+#+LATEX_HEADER: \definecolor{bg}{rgb}{0.95,0.95,0.95}
+#+LATEX_HEADER: \setminted{frame=single,bgcolor=bg,samepage=true}
+#+LATEX_HEADER: \setlength{\parindent}{0pt}
+#+LATEX_HEADER: \usepackage{float}
+#+LATEX_HEADER: \usepackage{svg}
+#+LATEX_HEADER: \usepackage{cancel}
+#+LATEX_HEADER: \usepackage{amssymb}
+#+LATEX_HEADER: \usepackage{mathtools, nccmath}
+#+LATEX_HEADER: \sisetup{per-mode=fraction}
+#+LATEX_HEADER: \newcommand{\Lagr}{\mathcal{L}}
+#+LATEX_HEADER: \newcommand{\Lagri}{\mathcal{L}^{-1}}
+#+LATEX_HEADER: \newcommand{\Ztrans}{\mathcal{Z}}
+#+LATEX_HEADER: \newcommand{\Ztransi}{\mathcal{Z}^{-1}}
+#+LATEX_HEADER: \newcommand{\ZOH}{\text{ZOH}}
+#+LATEX_HEADER: \renewcommand\arraystretch{1.2}
+
+#+begin_src ipython :session :results none :exports none
+import numpy as np
+import pandas as pd
+from matplotlib import pyplot as plt
+from IPython.display import set_matplotlib_formats
+%matplotlib inline
+set_matplotlib_formats('svg')
+#+end_src
+#+begin_src ipython :session :results none :exports none
+import IPython
+from tabulate import tabulate
+
+class OrgFormatter(IPython.core.formatters.BaseFormatter):
+    def __call__(self, obj):
+        try:
+            return tabulate(obj, headers='keys',
+                            tablefmt='orgtbl', showindex='always')
+        except:
+            return None
+
+ip = get_ipython()
+ip.display_formatter.formatters['text/org'] = OrgFormatter()
+#+end_src
+* Obtain the zero-order hold equivalent for the following systems with a sampling period of $T = 0.01$
+** $G_p(s) = \dfrac{K}{s + a}$, $K = 10$, $a = 3$
+The zero order hold equivalent of a system is given as:
+\begin{equation}
+\ZOH\{G(s)\} = (1 - z^{-1})\Ztrans\left\{\frac{G(s)}{s}\right\}
+\end{equation}
+
+Focussing on the Z transform part of the equation, we first take the partial fraction expansion of $G_p(s)/s$
+\begin{align*}
+G_z(s) = \frac{K}{s(s + a)} &= \frac{A}{s} + \frac{B}{s + a}\\
+\\
+A &= \lim_{s \to 0} sG_z(s) = \lim_{s \to 0} \frac{K}{s + a} = \frac{K}{a} \\
+B &= \lim_{s \to -a} (s + a)G_z(s) = \lim_{s \to -a} \frac{K}{s} = \frac{K}{-a} = -A
+\end{align*}
+
+Now that we have the partial fraction expansion of $G_z(s)$, we can take the Z transform of it's individual components.
+\begin{align*}
+G_z(z) = \Ztrans\{G_z(s)\} &= \Ztrans\left\{\frac{A}{s} - \frac{A}{s + a}\right\} \\
+&= \frac{A}{1 - z^{-1}} - \frac{A}{1 - e^{-aT}z^{-1}} \\
+&= A\left(\frac{1}{1 - z^{-1}} - \frac{1}{1 - e^{-aT}z^{-1}}\right) \\
+\end{align*}
+Substituting into our definition for the zero order hold:
+\begin{align*}
+\ZOH\{G_p(s)\} &= (1 - z^{-1})A\left(\frac{1}{1 - z^{-1}} - \frac{1}{1 - e^{-aT}z^{-1}}\right) \\
+&= A(1 - z^{-1})\frac{(1 - e^{-aT}z^{-1}) - (1 - z^{-1})}{(1 - z^{-1})(1 - e^{-aT}z^{-1})} \\
+&= A(\frac{(1 - e^{-aT}z^{-1}) - (1 - z^{-1})}{1 - e^{-aT}z^{-1}} \\
+&= A\frac{(-e^{-aT} + 1)z^{-1}}{1 - e^{-aT}z^{-1}} \\
+\end{align*}
+Substituting our given values:
+\begin{equation}
+\frac{0.09851 z^{-1}}{1 - 0.9704z^{-1}}
+\end{equation}
+** $G_p(s) = \dfrac{\omega_n^2}{s^2 + 2\zeta\omega_n s + \omega_n^2}$, $\omega_n = \SI{10}{\radian\per\second}$, $\zeta = 0.8$
+For a second order system like this, we first check if the denominator has imaginary roots:
+\begin{align*}
+\Delta = b^2 - 4ac &= [2(0.8)(10)]^2 - 4(1)(10^2) = -144 < 0
+\end{align*}
+Since $\Delta < 0$, we cannot separate the denominator into two roots and will have to take the partial fraction expansion of $G_z(s) = G_p(s)/s$ directly.
+
+\begin{align*}
+G_z(s) = \frac{\omega_n^2}{s(s^2 + 2\zeta\omega_n s + \omega_n^2)} &= \frac{A}{s} + \frac{Bs + C}{s^2 + 2\zeta\omega_n s + \omega_n^2}\\
+\\
+A &= \lim_{s \to 0} sG_z(s) = \lim_{s \to 0} \frac{\omega_n^2}{s^2 + 2\zeta\omega_n s + \omega_n^2} = \frac{\omega_n^2}{\omega_n^2} = 1 \\
+\\
+\omega_n^2 &= A(s^2 + 2\zeta\omega_n s + \omega_n^2) + s(Bs + C) \\
+&= (A + B)s^2 + (C + 2\zeta\omega_n)s + \omega_n^2 \\
+B &= -A = -1\\
+C &= -2\zeta\omega_n
+\end{align*}
+\begin{equation}
+G_z(s) = \frac{1}{s} - \underbrace{\frac{s - C}{s^2 + 2\zeta\omega_n s + \omega_n^2}}_{G_{z2}(s)}
+\end{equation}
+In order for $G_{z2}(s)$ to match known Z transforms, we have to complete the square of the denominator.
+
+Any quadratic formula $ax^2 + bx + c$ can be rewritten as $a(x + d)^2 + e$ where:
+\begin{align*}
+d &= \frac{b}{2a} & e &= c - \frac{b^2}{4a}
+\end{align*}
+
+\begin{align*}
+G_{z2}(s) &= \frac{s - C}{s^2 + 2\zeta\omega_n s + \omega_n^2} \\
+&= \frac{s - C}{(s + \zeta\omega_n)^2 + (\omega_n^2 - \zeta^2\omega_n^2)} \\
+&= \frac{s - C}{(s + \zeta\omega_n)^2 + \omega_n^2(1 - \zeta^2)} \\
+&= \frac{s + \zeta\omega_n}{(s + \zeta\omega_n)^2 + \omega_n^2(1 - \zeta^2)} + \frac{-C -\zeta\omega_n}{(s + \zeta\omega_n)^2 + \omega_n^2(1 - \zeta^2)} \\
+&= \frac{s + \zeta\omega_n}{(s + \zeta\omega_n)^2 + \omega_n^2(1 - \zeta^2)} + \frac{-C -\zeta\omega_n}{\omega_n\sqrt{1 - \zeta^2}} \frac{\omega_n\sqrt{1 - \zeta^2}}{(s + \zeta\omega_n)^2 + \omega_n^2(1 - \zeta^2)} \\
+\end{align*}
+
+\begin{equation}
+G_z(s) = \frac{1}{s} - \frac{s + \zeta\omega_n}{(s + \zeta\omega_n)^2 + \omega_n^2(1 - \zeta^2)} - \frac{-C -\zeta\omega_n}{\omega_n\sqrt{1 - \zeta^2}} \frac{\omega_n\sqrt{1 - \zeta^2}}{(s + \zeta\omega_n)^2 + \omega_n^2(1 - \zeta^2)} \\
+\end{equation}
+For brevity, let's define:
+\begin{align*}
+D &= \zeta\omega_n \\
+E^2 &= \omega_n^2(1 - \zeta^2) \\
+F &= \frac{-C - D}{E} 
+\end{align*}
+Now we can write $G_z(s)$ as:
+\begin{equation}
+G_z(s) = \frac{1}{s} - \frac{s + D}{(s + D)^2 + E^2} - F \frac{E}{(s + D)^2 + E^2} \\
+\end{equation}
+
+
+Taking the Z transform:
+\begin{align*}
+G_z(z) = \Ztrans\{G_z(s)\}
+&= \Ztrans\left\{
+    \frac{1}{s}
+    - \frac{s + D}{(s + D)^2 + E^2}
+    - F \frac{E}{(s + D)^2 + E^2}
+\right\} \\
+&=
+\frac{1}{1 - z^{-1}}
+- \frac{1 - e^{-DT}z^{-1} \cos{ET}}{1 - 2e^{-DT}z^{-1}\cos{ET} + e^{-2DT}z^{-2}}
+- F \frac{e^{-DT}z^{-1} \sin{ET}}{1 - 2e^{-DT}z^{-1}\cos{ET} + e^{-2DT}z^{-2}} \\
+&=
+\frac{1}{1 - z^{-1}}
+- \frac{1 - e^{-DT}z^{-1} \cos{ET} - F e^{-DT}z^{-1} \sin{ET}}{1 - 2e^{-DT}z^{-1}\cos{ET} + e^{-2DT}z^{-2}} \\
+&=
+\frac{1}{1 - z^{-1}}
+- \frac{1 - e^{-DT}(\cos{ET} - F \sin{ET})z^{-1}}{1 - 2e^{-DT}z^{-1}\cos{ET} + e^{-2DT}z^{-2}}
+\end{align*}
+
+Substituting into our definition for the zero order hold:
+\begin{align*}
+\ZOH\{G_p(s)\} &=
+(1 - z^{-1})
+\left(
+    \frac{1}{1 - z^{-1}}
+    - \frac{1 - e^{-DT}(\cos{ET} - F\sin{ET})z^{-1}}{1 - 2e^{-DT}z^{-1}\cos{ET} + e^{-2DT}z^{-2}}
+\right) \\
+&=
+(1 - z^{-1})
+\left(
+     \frac{1 - 2e^{-DT}z^{-1}\cos{ET} + e^{-2DT}z^{-2} - (1 - e^{-DT}(\cos{ET} - F\sin{ET})z^{-1})(1 - z^{-1})}
+      {(1 - 2e^{-DT}z^{-1}\cos{ET} + e^{-2DT}z^{-2})(1 - z^{-1})}
+\right) \\
+&=
+ \frac{1 - 2e^{-DT}z^{-1}\cos{ET} + e^{-2DT}z^{-2} - (1 - e^{-DT}(\cos{ET} - F\sin{ET})z^{-1})}
+    {1 - 2e^{-DT}z^{-1}\cos{ET} + e^{-2DT}z^{-2}}
+\end{align*}
+
+** $G_p(s) = \dfrac{\omega_n^2}{s^2 + 2\zeta\omega_n s + \omega_n^2}$, $\omega_n = \SI{20}{\radian\per\second}$, $\zeta = 1.25$
+For a second order system like this, we first check if the denominator has imaginary roots:
+\begin{align*}
+\Delta = b^2 - 4ac &= [2(1.25)(20)]^2 - 4(1)(20^2) = 900 > 0
+\end{align*}
+Since $\Delta > 0$, we can separate the denominator into two roots.
+\begin{align*}
+-a &= -\zeta\omega_n \pm \sqrt{\Delta}/2 \\
+a_1 &= \zeta\omega_n + \sqrt{\Delta}/2 \\
+a_2 &= \zeta\omega_n - \sqrt{\Delta}/2 \\
+a_1 - a_2 &= \sqrt{\Delta} \\
+G_p(s) &= \frac{\omega_n^2}{(s + a_1)(s + a_2)}
+\end{align*}
+Taking the partial fraction expansion of $G_z(s) = G_p(s)/s$:
+\begin{align*}
+G_z(s) = \frac{\omega_n^2}{s(s + a_1)(s + a_2)} &= \frac{A}{s} + \frac{B}{s + a_1} + \frac{C}{s + a_2}\\
+\\
+A &= \lim_{s \to 0} sG_z(s) = \frac{\omega_n^2}{a_1 a_2} \\
+B &= \lim_{s \to -a_1} (s + a_1)G_z(s) = \frac{\omega_n^2}{-a_1 (-a_1 + a_2)} \\
+C &= \lim_{s \to -a_2} (s + a_2)G_z(s) = \frac{\omega_n^2}{-a_2 (-a_2 + a_1)} \\
+\end{align*}
+Taking the Z transform:
+\begin{align*}
+G_z(z) = \Ztrans\{G_z(s)\}
+&= \Ztrans\left\{
+    \frac{A}{s}
+    \frac{B}{s + a_1}
+    \frac{C}{s + a_2}
+\right\} \\
+&=
+\frac{A}{1 - z^{-1}}
++ \frac{B}{1 - e^{-a_1T}z^{-1}}
++ \frac{C}{1 - e^{-a_2T}z^{-1}}
+\end{align*}
+Substituting into our definition for the zero order hold:
+\begin{align*}
+\ZOH\{G_p(s)\} &=
+(1 - z^{-1})
+\left(
+    \frac{A}{1 - z^{-1}}
+    + \frac{B}{1 - e^{-a_1T}z^{-1}}
+    + \frac{C}{1 - e^{-a_2T}z^{-1}}
+\right) \\
+\end{align*}
+
+** $G_p(s) = K\dfrac{s + a/10}{s + a}$, $K = 0.81$, $a = 2$
+* Find the closed loop transfer function of a unity feedback system with ZOH equivalent plant $G_p(z) = \dfrac{z(z+b)}{z^2 + a_1z + a_2}$ and controller $D(z) = K_p + K_I\dfrac{z}{z - 1}$
+\begin{align*}
+G_ol(z) &= D(z) G_p(z) \\
+G_cl(z) &= \frac{D(z) G_p(z)}{1 + D(z) G_p(z)(1)}
+\end{align*}
+* For the given system $G(z) = \dfrac{y(k)}{u(k)} = \dfrac{b_0 z^2 + b_1 z + b_2}{z^3(z^2 + a_1 z + a_2)}$:
+** Express $y(k)$ in terms of past/present inputs and outputs
+Let's start by expressing $G(z)$ in delay form:
+\begin{align*}
+G(z) &= \frac{b_0 z^2 + b_1 z + b_2}{z^3(z^2 + a_1 z + a_2)} \\
+&= \frac{b_0 z^2 + b_1 z + b_2}{z^5 + a_1 z^4 + a_2 z^3} \cdot \frac{z^{-5}}{z^{-5}}\\
+&= \frac{b_0 z^{-3} + b_1 z^{-4} + b_2z^{-5}}{1 + a_1 z^{-1} + a_2 z^{-2}}
+\end{align*}
+Now we can multiply across denominators:
+\begin{align*}
+\frac{y(k)}{u(k)} &= \frac{b_0 z^{-3} + b_1 z^{-4} + b_2z^{-5}}{1 + a_1 z^{-1} + a_2 z^{-2}} \\
+y(k)(1 + a_1 z^{-1} + a_2 z^{-2}) &= u(k)(b_0 z^{-3} + b_1 z^{-4} + b_2z^{-5}) \\
+y(k) + a_1 y(k - 1) + a_2 y(k - 2) &= b_0 u(k - 3) + b_1 u(k - 4) + b_2 u(k - 5)
+\end{align*}
+Solving for $y(k)$:
+#+NAME: eq:y_k
+\begin{equation}
+y(k) = b_0 u(k - 3) + b_1 u(k - 4) + b_2 u(k - 5) - a_1 y(k - 1) - a_2 y(k - 2)
+\end{equation}
+** Find the delay of the system
+From Eq. [[eq:y_k]], we can see that the most recent input term is $u(k - 3)$, hence there are 3 periods of dead time before the system would respond to our input.
+** Find the DC gain of the system
+The DC gain of a system is given by the final value theorem where:
+\begin{equation}
+\text{DC Gain} = \lim_{s \to 0} G(s) = \lim_{z \to 1} G(z)
+\end{equation}
+
+For the given system:
+\begin{align*}
+\text{DC Gain} &= \lim_{z \to 1} \frac{b_0 z^2 + b_1 z + b_2}{z^3(z^2 + a_1 z + a_2)} \\
+&= \frac{b_0 + b_1 + b_2}{1 + a_1 + a_2} 
+\end{align*}
+** Find the steady-state error of the system to the input $u(t) = 2$
+The error is given by:
+\begin{equation}
+e = u - y = u - Gu = u(1 - G)begin
+\end{equation}
+The steady state error is:
+\begin{equation}
+e_{ss} = \lim_{t \to \infty} e = \lim_{s \to 0} s e(s) = \lim_{z \to 1} (1 - z^{-1})e(z)
+\end{equation}
+
+For the given system:
+\begin{align*}
+e_{ss} &= \lim_{z \to 1} (1 - z^{-1})u(z)(1 - G(z)) \\
+&= \lim_{z \to 1} (1 - z^{-1})\Ztrans\{2\}(1 - G(z)) \\
+&= \lim_{z \to 1} (1 - z^{-1})\frac{2}{1 - z^-1}(1 - G(z)) \\
+&= \lim_{z \to 1} 2(1 - G(z)) \\
+&= \lim_{z \to 1} 2(1 - \text{DC Gain}(G)) \\
+\end{align*}
+
+
