@@ -1,0 +1,144 @@
+#+TITLE: MECH 467 Prelab 2:
+#+AUTHOR: Jasper Chan - 37467164
+#+SUBTITLE: Digital Control of Motion Actuators
+
+#+OPTIONS: toc:nil
+
+#+LATEX_HEADER: \definecolor{bg}{rgb}{0.95,0.95,0.95}
+#+LATEX_HEADER: \setminted{frame=single,bgcolor=bg,samepage=true}
+#+LATEX_HEADER: \setlength{\parindent}{0pt}
+#+LATEX_HEADER: \usepackage{float}
+#+LATEX_HEADER: \usepackage{svg}
+#+LATEX_HEADER: \usepackage{cancel}
+#+LATEX_HEADER: \usepackage{amssymb}
+#+LATEX_HEADER: \usepackage{mathtools, nccmath}
+#+LATEX_HEADER: \newcommand{\Lwrap}[1]{\left\{#1\right\}}
+#+LATEX_HEADER: \newcommand{\Lagr}[1]{\mathcal{L}\Lwrap{#1}}
+#+LATEX_HEADER: \newcommand{\Lagri}[1]{\mathcal{L}^{-1}\Lwrap{#1}}
+#+LATEX_HEADER: \newcommand{\Ztrans}[1]{\mathcal{Z}\Lwrap{#1}}
+#+LATEX_HEADER: \newcommand{\Ztransi}[1]{\mathcal{Z}^{-1}\Lwrap{#1}}
+#+LATEX_HEADER: \newcommand{\ZOH}[1]{\text{ZOH}\left(#1\right)}
+
+Note: when not specified, all units are SI without prefixes.
+* Discrete Transfer Function Derivation
+#+NAME: fig:fig1
+#+CAPTION: Open loop Block diagram of Ball Screw Feed Drive System
+[[file:fig1.svg]]
+
+The open loop transfer function of [[fig:fig1]][fn:ignore] is:
+
+[fn:ignore] Ignoring the DAC saturation, Zero-Order Hold, and Coulomb friction blocks.
+
+
+
+
+\begin{align}
+\nonumber
+G_\text{ol}(s) &= K_a K_t \frac{1}{J_e s + B_e} \frac{K_e}{s} \\
+&= \left(\frac{K_a K_t K_e}{J_e}\right) \underbrace{\frac{1}{s(s + (B_e/J_e))}}_{G_{\text{ol}1}}
+\end{align}
+
+Let's take the partial fraction decomposition of $G_z(s) = G_{\text{ol}1}(s)/s$:
+\begin{align*}
+G_z(s) &= \frac{1}{s^2(s + (B_e/J_e))} \\
+&= \frac{A}{s} + \frac{B}{s^2} + \frac{C}{s + (B_e/J_e)} \\
+B &= \lim_{s \to 0} s^2G_z(s) = \lim_{s \to 0} \frac{1}{s + (B_e/J_e)} = \frac{J_e}{B_e}\\
+C &= \lim_{s \to -(B_e/J_e)} (s + (B_e/J_e))G_z(s) = \lim_{s \to -(B_e/J_e)} \frac{1}{s^2} = \frac{J_e^2}{B_e^2} = B^2\\
+\\
+1 &= A s (s + (B_e/J_e)) + B(s + (B_e/J_e)) + B^2s^2\\
+1 &= (A + B^2)s^2 + (A(B_e/J_e) + B)s + (B(B_e/J_e)) \\
+A &= -B^2
+\end{align*}
+
+Taking the Zero Order Hold of $G_\text{ol}(s)$:
+\begin{align*}
+G_\text{ol}(z) = \ZOH{G_\text{ol}(s)} &= (1 - z^{-1})\Ztrans{\frac{G_\text{ol}(s)}{s}} \\
+&= (1 - z^{-1})
+\left(\frac{K_a K_t K_e}{J_e}\right)
+\Ztrans{
+    \frac{-B^2}{s} + \frac{B}{s^2} + \frac{B^2}{s + (B_e/J_e)}
+} \\
+&= (1 - z^{-1})
+\left(\frac{K_a K_t K_e}{J_e}\right)
+\left[
+    - B^2 \frac{1}{1 - z^{-1}}
+    + B T \frac{z^{-1}}{(1 - z^{-1})^2}
+    + B^2 \frac{1}{1 - e^{-(B_e/J_e)T}z^{-1}}
+\right]\\
+&=
+\left(\frac{K_a K_t K_e}{J_e}\right)
+\left[
+    - B^2 
+    + B T \frac{z^{-1}}{1 - z^{-1}}
+    + B^2 \frac{1 - z^{-1}}{1 - e^{-(B_e/J_e)T}z^{-1}}
+\right]\\
+&= \medmath{
+\underbrace{\left(\frac{K_a K_t K_e}{J_e}\right)}_{D}
+\frac
+{
+    (B^2(e^{-(B_e/J_e)T} + 1) + BT - 2B^2)z^{-1}
+    + (-(B^2 + BT)e^{-(B_e/J_e)T} + B^2)z^{-2}
+}
+{1 - (e^{-(B_e/J_e)T} + 1)z^{-1} + e^{-(B_e/J_e)T}z^{-2}}
+}
+\end{align*}
+
+Let's first plug our numbers into MATLAB: 
+#+begin_src matlab :session :exports code
+% Values from prelab
+K_a = 0.887;  % A/V
+K_t = 0.72;  % Nm/A
+J_e = 7e-4;  % Kgm^2
+B_e = 0.00612;  % Nm/rad/s
+K_e = 20/(2*pi);  % mm/rad
+T = 0.0002;  % s
+K_d = 1;  % mm/V
+
+D = K_a*K_t*K_e/J_e;
+B = J_e/B_e;
+ex = exp(-(B_e/J_e)*T);  % exponential value for brevity
+#+end_src
+
+Calculating our transfer function: 
+#+begin_src matlab :session :exports both :results code
+num = D*[...
+    (B^2*(ex + 1) + B*T - 2*(B^2)) ...
+    (-(B^2 + B*T)*ex + B^2)];
+den = [...
+    1 ...
+    -(ex + 1) ...
+    ex]
+G_olz = tf(num, den, T);
+    
+ans = evalc('G_olz')
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+| G_olz =                          |
+| -151.8 z + 5.801e-05             |
+| ----------------------           |
+| z^2 - 1.998 z + 0.9983           |
+| Sample time: 0.0002 seconds      |
+| Discrete-time transfer function. |
+#+end_src
+
+Let's compare it against MATLAB's answer using c2d
+#+begin_src matlab :session :exports both :results code
+s = tf('s');
+G_ols = D * 1/(s*(s + (B_e/J_e)));
+G_olzm = c2d(G_ols, T, 'zoh');
+
+ans = evalc('G_olzm')
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+| G_olzm =                         |
+| 5.805e-05 z + 5.801e-05          |
+| -----------------------          |
+| z^2 - 1.998 z + 0.9983           |
+| Sample time: 0.0002 seconds      |
+| Discrete-time transfer function. |
+#+end_src
+
