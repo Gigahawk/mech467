@@ -7,6 +7,7 @@
 #+LATEX_HEADER: \definecolor{bg}{rgb}{0.95,0.95,0.95}
 #+LATEX_HEADER: \setminted{frame=single,bgcolor=bg,samepage=true}
 #+LATEX_HEADER: \setlength{\parindent}{0pt}
+#+LATEX_HEADER: \sisetup{per-mode=fraction}
 #+LATEX_HEADER: \usepackage{float}
 #+LATEX_HEADER: \usepackage{svg}
 #+LATEX_HEADER: \usepackage{cancel}
@@ -25,7 +26,7 @@ Note: when not specified, all units are SI without prefixes.
 #+CAPTION: Open loop Block diagram of Ball Screw Feed Drive System
 [[file:fig1.svg]]
 
-The open loop transfer function of [[fig:fig1]][fn:ignore] is:
+The open loop transfer function of Figure [[fig:fig1]][fn:ignore] is:
 
 [fn:ignore] Ignoring the DAC saturation, Zero-Order Hold, and Coulomb friction blocks.
 
@@ -35,7 +36,7 @@ The open loop transfer function of [[fig:fig1]][fn:ignore] is:
 \begin{align}
 \nonumber
 G_\text{ol}(s) &= K_a K_t \frac{1}{J_e s + B_e} \frac{K_e}{s} \\
-&= \left(\frac{K_a K_t K_e}{J_e}\right) \underbrace{\frac{1}{s(s + (B_e/J_e))}}_{G_{\text{ol}1}}
+&= \left(\frac{K_a K_t K_e}{J_e}\right) \underbrace{\frac{1}{s(s + (B_e/J_e))}}_{G_{\text{ol}1}} \label{eq:G_ols} 
 \end{align}
 
 Let's take the partial fraction decomposition of $G_z(s) = G_{\text{ol}1}(s)/s$:
@@ -84,7 +85,7 @@ G_\text{ol}(z) = \ZOH{G_\text{ol}(s)} &= (1 - z^{-1})\Ztrans{\frac{G_\text{ol}(s
 \end{align*}
 
 Let's first plug our numbers into MATLAB: 
-#+begin_src matlab :session :exports code
+#+begin_src matlab :session :exports code :results output
 % Values from prelab
 K_a = 0.887;  % A/V
 K_t = 0.72;  % Nm/A
@@ -99,46 +100,767 @@ B = J_e/B_e;
 ex = exp(-(B_e/J_e)*T);  % exponential value for brevity
 #+end_src
 
+#+RESULTS:
+
+
 Calculating our transfer function: 
-#+begin_src matlab :session :exports both :results code
+#+begin_src matlab :session :exports both :results output code
 num = D*[...
     (B^2*(ex + 1) + B*T - 2*(B^2)) ...
     (-(B^2 + B*T)*ex + B^2)];
 den = [...
     1 ...
     -(ex + 1) ...
-    ex]
-G_olz = tf(num, den, T);
-    
-ans = evalc('G_olz')
+    ex];
+G_olz = tf(num, den, T)
 #+end_src
 
 #+RESULTS:
 #+begin_src matlab
-| G_olz =                          |
-| -151.8 z + 5.801e-05             |
-| ----------------------           |
-| z^2 - 1.998 z + 0.9983           |
-| Sample time: 0.0002 seconds      |
-| Discrete-time transfer function. |
+G_olz =
+ 
+  5.805e-05 z + 5.801e-05
+  -----------------------
+  z^2 - 1.998 z + 0.9983
+ 
+Sample time: 0.0002 seconds
+Discrete-time transfer function.
 #+end_src
 
 Let's compare it against MATLAB's answer using c2d
-#+begin_src matlab :session :exports both :results code
+#+begin_src matlab :session :exports both :results output code
 s = tf('s');
 G_ols = D * 1/(s*(s + (B_e/J_e)));
-G_olzm = c2d(G_ols, T, 'zoh');
-
-ans = evalc('G_olzm')
+G_olzm = c2d(G_ols, T, 'zoh')
 #+end_src
 
 #+RESULTS:
 #+begin_src matlab
-| G_olzm =                         |
-| 5.805e-05 z + 5.801e-05          |
-| -----------------------          |
-| z^2 - 1.998 z + 0.9983           |
-| Sample time: 0.0002 seconds      |
-| Discrete-time transfer function. |
+G_olzm =
+ 
+  5.805e-05 z + 5.801e-05
+  -----------------------
+  z^2 - 1.998 z + 0.9983
+ 
+Sample time: 0.0002 seconds
+Discrete-time transfer function.
+#+end_src
+* State Space Model
+Converting our discrete transfer function to a state space model:
+#+begin_src matlab :session :exports both :results output code
+sys = ss(G_olz)
 #+end_src
 
+#+RESULTS:
+#+begin_src matlab
+sys =
+ 
+  A = 
+            x1       x2
+   x1    1.998  -0.9983
+   x2        1        0
+ 
+  B = 
+             u1
+   x1  0.007812
+   x2         0
+ 
+  C = 
+             x1        x2
+   y1   0.00743  0.007426
+ 
+  D = 
+       u1
+   y1   0
+ 
+Sample time: 0.0002 seconds
+Discrete-time state-space model.
+#+end_src
+
+Applying a step input to the state space model and transfer function:
+
+#+begin_src matlab :session :exports both :results file
+f_name = 'statespace_tf_comp1.svg';
+t_final = 0.01;  % s
+f = figure('visible', 'off',...
+             'Position', [0 0 600 300]);
+step(G_olz, 'r', sys, 'b.', G_ols, 'g', t_final);
+l = legend(...
+    'Discretized Transfer Function', ...
+    'State Space Model', ...
+    'Continuous Transfer Function', ...
+    'Location', 'northwest');
+set(l, 'color', 'none', 'edgecolor', 'none');
+saveas(f, f_name);
+ans = f_name;
+#+end_src
+
+#+RESULTS:
+[[file:statespace_tf_comp1.svg]]
+
+
+We can also compare the step response for a larger time frame:
+#+begin_src matlab :session :exports both :results file
+f_name = 'statespace_tf_comp2.svg';
+t_final = 1;  % s
+f = figure('visible', 'off',...
+             'Position', [0 0 600 300]);
+step(G_olz, 'r', sys, 'b.', G_ols, 'g', t_final);
+l = legend(...
+    'Discretized Transfer Function', ...
+    'State Space Model', ...
+    'Continuous Transfer Function', ...
+    'Location', 'northwest');
+set(l, 'color', 'none', 'edgecolor', 'none');
+exportgraphics(f, f_name);
+ans = f_name;
+#+end_src
+
+#+RESULTS:
+[[file:statespace_tf_comp2.svg]]
+As shown in the plots, the response of the transfer function and state space model are perfectly matched.
+* Stability Analysis:
+By ignoring Coulomb friction and saturation limits:
+** Assume that the position control loop is closed by a proportional controller with gain $K_p [\si{\volt\per\milli\meter}]$. By plotting the root locus of the drive $G_\text{ol}(s)$ in s-plane and $G_\text{ol}(z)$ in z-plane, observe how the closed-loop poles of the system change as gain $K_p$ increases from zero to infinity. Derive the basic expressions manually for the continuous system.
+
+#+begin_quote
+Note: the question does not exactly specify whether the controller is placed in the feedback or forward path of the system.
+MATLAB assumes it will be in the feedback path.
+However, for the purposes of plotting the root locus this makes no difference as the root locus only depends on the denominator of the closed loop transfer function which will be identical in either scenario.
+#+end_quote
+
+Let's plot the root locus of the continuous system:
+#+begin_src matlab :session :exports both :results file
+f_name = 'rootlocus_cont.svg';
+f = figure('visible', 'off',...
+             'Position', [0 0 600 300]);
+rlocus(G_ols);
+f.Renderer = 'painters'
+saveas(f, f_name);
+ans = f_name;
+#+end_src
+
+#+RESULTS:
+[[file:rootlocus_cont.svg]]
+
+And the discretized system:
+#+begin_src matlab :session :exports both :results file
+f_name = 'rootlocus_disc.svg';
+f = figure('visible', 'off',...
+             'Position', [0 0 600 300]);
+rlocus(G_olzm);
+f.Renderer = 'painters'
+saveas(f, f_name);
+ans = f_name;
+#+end_src
+
+#+RESULTS:
+[[file:rootlocus_disc.svg]]
+
+*** Continuous system pole expression
+First let's find the closed loop expression of Eq. \ref{eq:G_ols} [fn:feedback]:
+[fn:feedback] Here I am assuming the controller is in the forward path.
+
+
+
+
+\begin{align*}
+G_\text{ol}(s)
+&= \underbrace{\left(\frac{K_a K_t K_e}{J_e}\right)}_{D} \underbrace{\frac{1}{s(s + (B_e/J_e))}}_{G_{\text{ol}1}}\\
+&= \frac{D}{s^2 + (B_e/J_e)s} \\
+G_\text{cl}(s)
+&= \frac{KG_\text{ol}(s)}{1 + KG_\text{ol}(s)} \\
+&= \frac{KD}{s^2 + (B_e/J_e)s + KD}
+\end{align*}
+If we set the denominator to zero and solve for $s$, we get:
+\begin{align*}
+s^2 + (B_e/J_e)s + KD &= 0 \\
+s &= \frac{1}{2}\left(-(B_e/J_e) \pm \sqrt{(B_e/J_e)^2 - 4KD}\right)
+\end{align*}
+Let's recall the value of $(B_e/J_e)$:
+#+begin_src matlab :session :exports both :results code
+ans = B_e/J_e
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+8.7429
+#+end_src
+
+We can see that for $K = 0$, we should get poles at $0$ and $-(B_e/J_e)$, which matches the plot.
+We can also see that for $K \to \infty$, $s$ first approaches $\frac{1}{2}(B_e/J_e)$, then proceeds to have an imaginary component approaching positive and negative infinity which also matches the plot.
+
+** Find the phase and gain margins of $G_\text{ol}(s)$ and $G_\text{ol}(z)$ using MATLAB's bode command. Comment on the stability of the closed-loop systems described in $s$ and $z$ domains.
+#+begin_src matlab :session :exports both :results file
+f_name = 'bode_cont.svg';
+f = figure('visible', 'off',...
+             'Position', [0 0 600 300]);
+margin(G_ols);
+saveas(f, f_name);
+ans = f_name;
+#+end_src
+
+#+RESULTS:
+[[file:bode_cont.svg]]
+
+#+begin_src matlab :session :exports both :results file
+f_name = 'bode_disc.svg';
+f = figure('visible', 'off',...
+             'Position', [0 0 600 300]);
+margin(G_olzm);
+saveas(f, f_name);
+ans = f_name;
+#+end_src
+
+#+RESULTS:
+[[file:bode_disc.svg]]
+
+Stability is lost when discretizing the model because information is discarded.
+** Discussion: Is stability in continuous and discrete domains always equivalent? Why? Using MATLAB, find the gain margin of $G_\text{ol}(z)$ for three different sampling times of $0.02$, $0.002$, and $0.0002$. Which one is more stable? What do you conclude?
+Stability between continuous and discrete domains are not equivalent because discretizing the model necessarily discards information which reduces the ability of the controller to keep the system stable.
+As you increase the sampling time, more information is discarded and the system should become less stable.
+
+Plotting the stability margins for $T = 0.002$:
+#+begin_src matlab :session :exports both :results file
+f_name = 'bode_disc2.svg';
+G_olzm2 = c2d(G_ols, 0.002);
+f = figure('visible', 'off',...
+             'Position', [0 0 600 300]);
+margin(G_olzm2);
+saveas(f, f_name);
+ans = f_name;
+#+end_src
+
+#+RESULTS:
+[[file:bode_disc2.svg]]
+
+And for $T = 0.02$:
+#+begin_src matlab :session :exports both :results file
+f_name = 'bode_disc3.svg';
+G_olzm3 = c2d(G_ols, 0.02);
+f = figure('visible', 'off',...
+             'Position', [0 0 600 300]);
+margin(G_olzm3);
+saveas(f, f_name);
+ans = f_name;
+#+end_src
+
+#+RESULTS:
+[[file:bode_disc3.svg]]
+
+From the plots, we can see that the system becomes less stable for higher values of T, eventually becoming unstable.
+* P-Controller Design
+** Finding $K_p$
+We want to find the controller gain $K$ such that our gain crossover frequency in the $z$ domain is $\SI{60}{\radian\per\second}$.
+
+
+Finding the expression for gain as a function of frequency:
+\begin{align*}
+|G_\text{ol}(e^{j\omega T})| &=
+\left|
+\frac{b_1 e^{j\omega T} + b_2}{e^{2j\omega T} + b_3e^{j\omega T} + b_4}
+\right| \\
+&=
+\left|
+\frac
+{b_1 (\cos(\omega T) + j\sin(\omega T)) + b_2}
+{(\cos(2\omega T) + j\sin(2\omega T)) + b_3(\cos(\omega T) + j\sin(\omega T)) + b_4}
+\right| \\
+&=
+\left|
+\frac
+{[b_1\cos(\omega T) + b_2] + j\sin(\omega T)}
+{[\cos(2\omega T) + b_3\cos(\omega T) + b_4] + j[\sin(2\omega T) + b_3\sin(\omega T)]}
+\right| \\
+&=
+\frac
+{\sqrt{[b_1\cos(\omega T) + b_2]^2 + \sin^2(\omega T)}}
+{\sqrt{[\cos(2\omega T) + b_3\cos(\omega T) + b_4]^2 + [\sin(2\omega T) + b_3\sin(\omega T)]^2}}
+\end{align*}
+Plugging in and solving for $\omega = \SI{60}{\radian\per\second}$:
+#+begin_src matlab :session :exports both :results code
+b_1 = num(1);
+b_2 = num(2);
+b_3 = den(2);
+b_4 = den(3);
+omg = 60;
+Omg = omg*T;
+% Gain at our desired frequency
+G_60 = sqrt((b_1*cos(Omg) + b_2)^2 + (b_1*sin(Omg))^2)/...
+       sqrt((cos(2*Omg) + b_3*cos(Omg) + b_4)^2 + (sin(2*Omg) + b_3*sin(Omg))^2);
+
+% Add gain of 1/G_60 to make it unity gain
+K_p = 1/G_60;
+ans = K_p
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+1.2527
+#+end_src
+** Simulink Model
+#+begin_src matlab :session :exports none :results none :eval never-export
+simulink
+#+end_src
+#+begin_src matlab :session :exports none :results none
+mu_k = 0.3;
+sat = 3;
+#+end_src
+
+#+begin_src matlab :session :exports none :results none
+open_system('closedloop_P');
+print -dsvg -s 'cl_P_simulink_raw.svg';
+#+end_src
+#+begin_src shell :exports results :results file
+inkscape cl_P_simulink_raw.svg --export-text-to-path --export-plain-svg -o cl_P_simulink.svg
+printf 'cl_P_simulink.svg'
+#+end_src
+
+#+RESULTS:
+[[file:cl_P_simulink.svg]]
+
+** Plots
+Let's run our simulation with and without friction: [fn:ode45]
+[fn:ode45] The solver was manually set to ~ode45~ for all runs due to issues with running the simulation with saturation limits near 1. The plots produced are slightly different when run with the solver set to auto.
+
+
+
+
+#+begin_src matlab :session :exports code :results none
+sat = 3;  % A, saturation limit
+mu_ks = [0.3 0];
+time_data = {};
+out_data = {};
+for mu_k=mu_ks
+    out = sim('closedloop_P', 7);
+    time_data = [time_data out.cl_P_out.Time];
+    out_data = [out_data; out.cl_P_out.Data];
+end
+#+end_src
+
+Plotting the results:
+#+begin_src matlab :session :exports both :results file
+f_name = 'closedloop_P_fric.svg';
+lgnd_txt = {};
+for mu_k=mu_ks
+    lgnd_txt = [lgnd_txt sprintf('\\mu_k = %.1f', mu_k)];
+end
+f = figure('visible', 'off',...
+             'Position', [0 0 600 300]);
+for i=1:size(mu_ks, 2)
+    plot(cell2mat(time_data(i)), cell2mat(out_data(i)));
+    hold on;
+end
+hold off;
+title('Closed loop step response');
+xlabel('Time [s]');
+ylabel('X_a [mm]');
+l = legend(lgnd_txt);
+set(l, 'Interpreter', 'none');
+set(l, 'color', 'none', 'edgecolor', 'none');
+saveas(f, f_name);
+ans = f_name;
+#+end_src
+
+#+RESULTS:
+[[file:closedloop_P_fric.svg]]
+
+Let's run our simulation with various saturation limits:
+#+begin_src matlab :session :exports code :results none
+sats = linspace(0.5, 3, 10);
+mu_k = 0.3;
+time_data = {};
+out_data = {};
+for sat=sats
+    out = sim('closedloop_P', 7);
+    time_data = [time_data out.cl_P_out.Time];
+    out_data = [out_data; out.cl_P_out.Data];
+end
+#+end_src
+
+Plotting the result:
+#+begin_src matlab :session :exports both :results file
+f_name = 'closedloop_P_fric_sats.svg';
+lgnd_txt = {};
+for sat=sats
+    lgnd_txt = [lgnd_txt sprintf('sat = %.2f', sat)];
+end
+f = figure('visible', 'off',...
+             'Position', [0 0 600 300]);
+for i=1:size(sats, 2)
+    plot(cell2mat(time_data(i)), cell2mat(out_data(i)));
+    hold on;
+end
+hold off;
+title('Closed loop step response, $\mu_k = 0.3$',...
+      'Interpreter', 'none');
+xlabel('Time [s]');
+ylabel('X_a [mm]');
+l = legend(lgnd_txt);
+set(l, 'color', 'none', 'edgecolor', 'none');
+set(l, 'Location', 'eastoutside');
+saveas(f, f_name);
+ans = f_name;
+#+end_src
+
+#+RESULTS:
+[[file:closedloop_P_fric_sats.svg]]
+
+Running our simulation with the same saturation limits, this time without friction:
+#+begin_src matlab :session :exports code :results none
+mu_k = 0;
+time_data = {};
+out_data = {};
+for sat=sats
+    out = sim('closedloop_P', 7);
+    time_data = [time_data out.cl_P_out.Time];
+    out_data = [out_data; out.cl_P_out.Data];
+end
+#+end_src
+
+Plotting the results:
+#+begin_src matlab :session :exports both :results file
+f_name = 'closedloop_P_nofric_sats.svg';
+lgnd_txt = {};
+for sat=sats
+    lgnd_txt = [lgnd_txt sprintf('sat = %.2f', sat)];
+end
+f = figure('visible', 'off',...
+             'Position', [0 0 600 300]);
+for i=1:size(sats, 2)
+    plot(cell2mat(time_data(i)), cell2mat(out_data(i)));
+    hold on;
+end
+hold off;
+title('Closed loop step response, $\mu_k = 0$',...
+      'Interpreter', 'none');
+xlabel('Time [s]');
+ylabel('X_a [mm]');
+l = legend(lgnd_txt);
+set(l, 'color', 'none', 'edgecolor', 'none');
+set(l, 'Location', 'eastoutside');
+saveas(f, f_name);
+ans = f_name;
+#+end_src
+
+#+RESULTS:
+[[file:closedloop_P_nofric_sats.svg]]
+
+** Discussion
+Coulomb friction greatly reduces the overshoot and seems to overdamp the initial oscillation, causing a longer settling time. It also seems to slightly increase the rise time.
+
+When Coulomb friction is accounted for, the saturation limit limits the rise time and overshoot of the system, creating a near perfect step response when it is limited to $\approx \SI{0.78}{\ampere}$.
+
+When Coulomb friction is ignored, the saturation limit does not appear to have a significant effect on the system
+* Lead-Lag compensator Design
+** Design a compensator to achieve $\SI{60}{\degree}$ phase margin at gain crossover frequency $\omega_c = \SI{377}{\radian\per\second}$
+The compensator will be of the form:
+\begin{equation}
+C(s) = K\frac{1 + a \tau s}{1 + \tau s}
+\end{equation}
+
+First, let's find out how much margin we will need to add:
+#+begin_src matlab :session :exports both :results code
+omega_c = 377;  % rad/s
+margin_req = 60; % deg
+% wout is in degrees
+[~, wout] = bode(G_olz, omega_c);
+phi = margin_req - (180 + wout);
+ans = phi;
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+60.832
+#+end_src
+
+
+The formula to find the max phase added by the compensator is:
+\begin{equation}
+\sin(\phi) = \frac{a - 1}{a + 1}
+\end{equation}
+Solving for $a$:
+\begin{align*}
+\frac{a - 1}{a + 1} &= \sin(\phi) \\
+a - 1 &= \sin(\phi)a + \sin(\phi) \\
+a(1 - \sin(\phi)) &= \sin(\phi) + 1 \\
+a &= \frac{\sin(\phi) + 1}{1 - \sin(\phi)}
+\end{align*}
+Plugging in our values:
+#+begin_src matlab :session :exports both :results code
+a = (sin(-phi) + 1)/(1 - sin(-phi));
+ans = a;
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+21.021
+#+end_src
+
+We need to add $\phi$ amount of phase at our desired frequency $\omega_c$.
+The formula to find the center frequency[fn:max] of the compensator is:
+\begin{equation}
+\omega_c = \frac{1}{\tau \sqrt{a}}
+\end{equation}
+[fn:max] The frequency at which the compensator adds the most phase.
+
+
+
+Solving for $\tau$, we get:
+\begin{equation}
+\tau = \frac{1}{\omega_c \sqrt{a}}
+\end{equation}
+Pluggging in our values:
+#+begin_src matlab :session :exports both :results code
+tau = 1/(omega_c * sqrt(a));
+ans = tau;
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+0.00057854
+#+end_src
+
+In order for $\omega_c$ to actually be the gain zero crossing, we need to know how much gain the compensator has to have at $\omega_c$.
+#+begin_src matlab :session :exports both :results code
+[H, ~] = bode(G_olz, omega_c);
+K_tot = 1/H
+ans = K_tot;
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+48.966
+#+end_src
+
+The total gain of our compensator at $\omega_c$ is given by:
+\begin{equation}
+K_\text{tot} = K \sqrt{a}
+\end{equation}
+Solving for $K$, we get:
+\begin{equation}
+K = \frac{K_\text{tot}}{\sqrt{a}}
+\end{equation}
+Pluggging in our values:
+#+begin_src matlab :session :exports both :results code
+K_comp = K_tot/sqrt(a);
+ans = K_comp;
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+10.68
+#+end_src
+
+Let's construct our compensator:
+#+begin_src matlab :session :exports both :results output code
+num_comp = K_comp*[a*tau 1];
+den_comp = [tau 1];
+C_comp = tf(num_comp, den_comp)
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+C_comp =
+ 
+  0.1299 s + 10.68
+  ----------------
+  0.0005785 s + 1
+ 
+Continuous-time transfer function.
+#+end_src
+
+We can verify that our compensator behaves as expected with a bode plot:
+#+begin_src matlab :session :exports both :results file
+f_name = 'C_comp.svg';
+f = figure('visible', 'off',...
+             'Position', [0 0 600 300]);
+bode(C_comp);
+saveas(f, f_name);
+ans = f_name;
+#+end_src
+
+#+RESULTS:
+[[file:C_comp.svg]]
+
+The graph shows that the compensator behaves as expected.
+
+Plotting the stability margins of the system with the controller:
+#+begin_src matlab :session :exports both :results file
+f_name = 'C_comp_sys.svg';
+f = figure('visible', 'off',...
+             'Position', [0 0 600 300]);
+C_comp_disc = c2d(C_comp, T, 'tustin');
+margin(C_comp_disc*G_olz);
+saveas(f, f_name);
+ans = f_name;
+#+end_src
+
+#+RESULTS:
+[[file:C_comp_sys.svg]]
+** Cascade an integral action $\dfrac{K_i + s}{s}$ to the lead lag compensator with a gain $K_i = \omega_c / 10$. Simulate the step and ramp input response with friction disturbance again, and show the effect of integral action on the steady state error. Compare the results with and without the integral controller.
+
+#+begin_src matlab :session :exports none :results none
+% Ensure default values are restored
+mu_k = 0.3;
+sat = 3;
+
+int_act = integral_action;
+ref_in = tf(1);  % step input
+#+end_src
+
+#+begin_src matlab :session :exports none :results none
+open_system('closedloop_leadlag');
+print -dsvg -s 'cl_C_simulink_raw.svg';
+#+end_src
+#+begin_src shell :exports results :results file
+inkscape cl_C_simulink_raw.svg --export-text-to-path --export-plain-svg -o cl_C_simulink.svg
+printf 'cl_C_simulink.svg'
+#+end_src
+
+#+RESULTS:
+[[file:cl_C_simulink.svg]]
+Let's define our integral action transfer function:
+#+begin_src matlab :session :exports both :results output code
+K_i = omega_c /10;
+integral_action = tf([1 K_i], [1 0])
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+integral_action =
+ 
+  s + 37.7
+  --------
+     s
+ 
+Continuous-time transfer function.
+#+end_src
+
+Running the simulation for step input with and without the integral action:
+#+begin_src matlab :session :exports code :results none
+ref_in = tf(1);  % step input
+time_data = {};
+out_data = {};
+in_data = {}
+
+int_act = integral_action;  % Use integral action
+out = sim('closedloop_leadlag', 7);
+time_data = [time_data out.cl_C_out.Time];
+out_data = [out_data; out.cl_C_out.Data];
+in_data = [in_data; out.cl_C_in.Data];
+
+int_act = tf(1);  % Remove the integral action
+out = sim('closedloop_leadlag', 7);
+time_data = [time_data out.cl_C_out.Time];
+out_data = [out_data; out.cl_C_out.Data];
+#+end_src
+
+Plotting the results:
+#+begin_src matlab :session :exports both :results file
+f_name = 'closedloop_C_step.svg';
+f = figure('visible', 'off',...
+             'Position', [0 0 600 300]);
+plot(cell2mat(time_data(1)), cell2mat(out_data(1)));
+hold on;
+plot(cell2mat(time_data(2)), cell2mat(out_data(2)));
+plot(cell2mat(time_data(1)), cell2mat(in_data(1)), 'g--');
+hold off;
+title('Closed loop step response');
+xlabel('Time [s]');
+ylabel('X_a [mm]');
+l = legend('Integral action', 'No integral action',...
+           'Input');
+set(l, 'color', 'none', 'edgecolor', 'none');
+saveas(f, f_name);
+ans = f_name;
+#+end_src
+
+#+RESULTS:
+[[file:closedloop_C_step.svg]]
+
+Running the simulation for ramp input with and without the integral action:
+#+begin_src matlab :session :exports code :results none
+ref_in = tf([1], [1 0]);  % ramp input
+time_data = {};
+out_data = {};
+in_data = {}
+
+int_act = integral_action;  % Use integral action
+out = sim('closedloop_leadlag', 7);
+time_data = [time_data out.cl_C_out.Time];
+out_data = [out_data; out.cl_C_out.Data];
+in_data = [in_data; out.cl_C_in.Data];
+
+int_act = tf(1);  % Remove the integral action
+out = sim('closedloop_leadlag', 7);
+time_data = [time_data out.cl_C_out.Time];
+out_data = [out_data; out.cl_C_out.Data];
+#+end_src
+
+Plotting the results:
+#+begin_src matlab :session :exports both :results file
+f_name = 'closedloop_C_ramp.svg';
+f = figure('visible', 'off',...
+             'Position', [0 0 600 300]);
+plot(cell2mat(time_data(1)), cell2mat(out_data(1)));
+hold on;
+plot(cell2mat(time_data(2)), cell2mat(out_data(2)));
+plot(cell2mat(time_data(1)), cell2mat(in_data(1)), 'g--');
+hold off;
+title('Closed loop step response');
+xlabel('Time [s]');
+ylabel('X_a [mm]');
+l = legend('Integral action', 'No integral action',...
+           'Input');
+set(l, 'color', 'none', 'edgecolor', 'none');
+xlim([1 2])
+saveas(f, f_name);
+ans = f_name;
+#+end_src
+
+#+RESULTS:
+[[file:closedloop_C_ramp.svg]]
+
+The plots show that the integral action completely removes the steady state error of the system, at the cost of some over shoot in the step response.
+
+* Discussion
+Plotting the various transfer functions defined thus far:
+#+begin_src matlab :session :exports both :results file
+f_name = 'bode_all.svg';
+f = figure('visible', 'off',...
+             'Position', [0 0 600 500]);
+bodeplot(...
+    G_ols,...
+    C_comp,...
+    C_comp*integral_action,...
+    G_ols*C_comp,...
+    G_ols*C_comp*integral_action);
+% Hack to move legend to top of plot
+children = get(f, 'Children');
+mChild = children(3);
+l = legend(mChild,...
+    'G_{ol}(s)',...
+    'LL(s)',...
+    'LLI(s)',...
+    'G_{ol}(s) LL(s)',...
+    'G_{ol}(s) LLI(s)');
+set(l, 'Interpreter', 'none');
+set(l, 'color', 'none', 'edgecolor', 'none');
+set(l, 'Location', 'northeast');
+    
+saveas(f, f_name);
+ans = f_name;
+#+end_src
+
+#+RESULTS:
+[[file:bode_all.svg]]
+
+The lead lag compensator adds phase margin at the desired gain zero crossing frequency $\omega_c$, and then shifts the gain plot up such that the zero crossing is actually at $\omega_c$.
+
+The integrator adds gain and subtracts for frequencies lower than $\omega_c$, (hence $K_i = \omega_c/10$) which removes steady state error when in a closed loop configuration.
+
+Increasing the gain crossover frequency of the system will reduce the steady state error and rise time at the cost of potentially adding unwanted overshoot.
+Of course gain crossover frequency can be increased by adding a DC gain, which will shift up the gain portion of the system's bode plot.
+However, any method of moving $\omega_c$ should have this effect.
+Moving $\omega_c$ further causes more of the frequencies in the input to be amplified, and conversely fewer frequencies to be attenuated.
