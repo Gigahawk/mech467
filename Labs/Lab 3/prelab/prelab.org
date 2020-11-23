@@ -1,0 +1,391 @@
+#+TITLE: MECH 467 Prelab 3:
+#+AUTHOR: Jasper Chan - 37467164
+#+SUBTITLE: Simulation of Contouring Performance in Coordinated Two Axis Motion
+
+#+OPTIONS: toc:nil
+
+#+LATEX_HEADER: \definecolor{bg}{rgb}{0.95,0.95,0.95}
+#+LATEX_HEADER: \setminted{frame=single,bgcolor=bg,samepage=true}
+#+LATEX_HEADER: \setlength{\parindent}{0pt}
+#+LATEX_HEADER: \sisetup{per-mode=fraction}
+#+LATEX_HEADER: \usepackage{float}
+#+LATEX_HEADER: \usepackage{svg}
+#+LATEX_HEADER: \usepackage{cancel}
+#+LATEX_HEADER: \usepackage{amssymb}
+#+LATEX_HEADER: \usepackage{mathtools, nccmath}
+#+LATEX_HEADER: \newcommand{\Lwrap}[1]{\left\{#1\right\}}
+#+LATEX_HEADER: \newcommand{\Lagr}[1]{\mathcal{L}\Lwrap{#1}}
+#+LATEX_HEADER: \newcommand{\Lagri}[1]{\mathcal{L}^{-1}\Lwrap{#1}}
+#+LATEX_HEADER: \newcommand{\Ztrans}[1]{\mathcal{Z}\Lwrap{#1}}
+#+LATEX_HEADER: \newcommand{\Ztransi}[1]{\mathcal{Z}^{-1}\Lwrap{#1}}
+#+LATEX_HEADER: \newcommand{\ZOH}[1]{\text{ZOH}\left(#1\right)}
+#+LATEX_HEADER: \DeclarePairedDelimiter{\ceil}{\lceil}{\rceil}
+#+LATEX_HEADER: \makeatletter \AtBeginEnvironment{minted}{\dontdofcolorbox} \def\dontdofcolorbox{\renewcommand\fcolorbox[4][]{##4}} \makeatother
+
+#+begin_src elisp :session :exports none
+(org-babel-tangle)
+#+end_src
+
+#+RESULTS:
+| arc_move.m | linear_move.m | generic_move.m | acceleration.m | feedrate.m | displacement.m | get_disc_time_periods.m | get_time_periods.m |
+
+Note: when not specified, all units are SI without prefixes.
+* Trajectory Generation
+For a trapezoidal feedrate profile, we split each movement into three sections: $T_1$ is the acceleration phase, $T_2$ is the constant velocity phase, and $T_3$ is the deceleration phase.
+In continuous time, these times are defined as:
+\begin{align}
+T_1 &= \frac{f_c - f_s}{A} \\
+T_2 &= \frac{L}{f_c} -
+\left[
+  \left(
+    \frac{1}{2A} - \frac{1}{2D}
+  \right) f_c + 
+  \left(
+    \frac{f_e^2}{2D} - \frac{f_s^2}{2A}
+  \right) \frac{1}{f_c}
+\right] \\
+T_3 &= \frac{f_e - f_c}{D}
+\end{align}
+Where:
+\begin{align*}
+A &:= \text{Max acceleration} &
+D &:= \text{Max deceleration} &
+L &:= \text{Path length} \\
+f_s &:= \text{Starting feedrate} &
+f_c &:= \text{Constant feedrate} &
+f_e &:= \text{Ending feedrate} 
+\end{align*}
+
+If we assume that every move must start and stop with the machine at rest (i.e. $f_s = f_e = 0$), then the above equations simplify to:
+\begin{align}
+T_1 &= \frac{f_c}{A} \\
+T_2 &= \frac{L}{f_c} -
+\left(
+\frac{1}{2A} - \frac{1}{2D}
+\right) f_c\\
+T_3 &= \frac{-f_c}{D}
+\end{align}
+
+Note that these equations are only valid for $T_2 \ge 0$, which is not necessarily the case for high values of $f_c$ or low values of $L$.
+In the event that $T_2 < 0$, we need to find a new max feedrate $f_{cm}$ such that $T_{2m} = 0$
+\begin{equation}
+f_{cm} = \sqrt{\frac{2ADL - (f_e^2 A - f_s^2 D)}{D - A}}
+\end{equation}
+Again assuming $f_s = f_e = 0$, we can simplify this to:
+\begin{equation}
+f_{cm} = \sqrt{\frac{2ADL}{D - A}}
+\end{equation}
+
+Let's implement this in MATLAB:
+#+begin_src matlab :exports code :tangle get_time_periods.m
+function [T_1, T_2, T_3] = get_time_periods(L, A, D, f_c)
+    T_2 = L/f_c - (1/(2*A) - 1/(2*D))*f_c;
+    if T_2 < 0
+        T_2 = 0;
+        f_c = sqrt(2*A*D*L/(D - A));
+    end
+    T_1 = f_c/A;
+    T_3 = -f_c/D;
+end
+#+end_src
+
+Now we need to discretize our results so that each time period $T_n$ is an integer multiple of our sample period $T_i$.
+With the new discretized timings, we also need to find new feedrate and accelerations so that the final trajectory still matches what we intended:
+\begin{align}
+N_n &= \ceil*{\frac{T_n}{T_i}} \\
+T_n' &= N_n T_i \\
+f_c' &= \frac{2L - f_s T_1' - f_e T_3'}{T_1' + 2T_2 + T_3'} = \frac{2L}{T_1' + 2T_2 + T_3'} \\
+A' &= \frac{f_c' - f_s}{T_1'} = \frac{f_c'}{T_1'} \\
+D' &= \frac{f_e - f_c'}{T_3'} = \frac{-f_c'}{T_3'} \\
+\end{align}
+
+Implementing this in MATLAB:
+#+begin_src matlab :exports code :tangle get_disc_time_periods.m
+function [N_1, N_2, N_3, f_cp, Ap, Dp] = get_disc_time_periods(...
+        T_1, T_2, T_3, L, T_i)
+    N_1 = ceil(T_1/T_i);
+    N_2 = ceil(T_2/T_i);
+    N_3 = ceil(T_3/T_i);
+    f_cp = 2*L/(T_i*(N_1 + 2*N_2 + N_3));
+    Ap = f_cp/(T_i*N_1);
+    Dp = -f_cp/(T_i*N_3);
+end
+#+end_src
+
+Now we have all of the parameters required to define our discretized displacement $l$, velocity/feedrate $f$, and acceleration $a$ as piecewise functions of step $k$:
+\begin{align}
+l(k) &= \begin{cases}
+\frac{1}{2}A'(k T_i)^2 + f_s(T_i) & k \le N_1 \\
+f_c' ((k - N_1) T_i) + l_1(N_1) & N_1 < k \le N_1 + N_2 \\
+\frac{1}{2}D'((k - (N_1 + N_2)) T_i)^2 + f_c'((k - (N_1 + N_2))T_i) + l_2(N_2) & N_1 + N_2 < k \le N_1 + N_2 + N_3 \\
+\end{cases} \\
+f(k) &= \begin{cases}
+A'(k T_i) + f_s & k \le N_1 \\
+f_c' & N_1 < k \le N_1 + N_2 \\
+D'((k - (N_1 + N_2))T_i) + f_c' & N_1 + N_2 < k \le N_1 + N_2 + N_3 \\
+\end{cases} \\
+a(k) &= \begin{cases}
+A' & k \le N_1 \\
+0  & N_1 < k \le N_1 + N_2 \\
+D' & N_1 + N_2 < k \le N_1 + N_2 + N_3 \\
+\end{cases}
+\end{align}
+#+begin_src matlab :exports code :tangle displacement.m
+function l = displacement(N_1, N_2, N_3, f_cp, Ap, Dp, T_i)
+    total = N_1 + N_2 + N_3;
+    l = zeros(1, total);
+    for k=1:total
+        k_1 = min(k, N_1);
+        k_2 = min(k - N_1, N_2);
+        k_3 = min(k - (N_1 + N_2), N_3);
+        l_1 = 0.5*Ap*(k_1*T_i)^2;
+        l_2 = f_cp*(k_2*T_i) + l_1;
+        l_3 = 0.5*Dp*(k_3*T_i)^2 + f_cp*(k_3*T_i) + l_2;
+        if k <= N_1
+            l(k) = l_1;
+        elseif k <= N_1 + N_2
+            l(k) = l_2;
+        elseif k <= N_1 + N_2 + N_3
+            l(k) = l_3;
+    end
+end
+#+end_src
+
+#+begin_src matlab :exports code :tangle feedrate.m
+function f = feedrate(N_1, N_2, N_3, f_cp, Ap, Dp, T_i)
+    total = N_1 + N_2 + N_3;
+    f = zeros(1, total);
+    for k=1:total
+        f_1 = Ap*(k*T_i);
+        f_2 = f_cp;
+        f_3 = Dp*((k - (N_1 + N_2))*T_i) + f_cp;
+        if k <= N_1
+            f(k) = f_1;
+        elseif k <= N_1 + N_2
+            f(k) = f_2;
+        elseif k <= N_1 + N_2 + N_3
+            f(k) = f_3;
+    end
+end
+#+end_src
+
+#+begin_src matlab :exports code :tangle acceleration.m
+function a = acceleration(N_1, N_2, N_3, f_cp, Ap, Dp, T_i)
+    total = N_1 + N_2 + N_3;
+    a = zeros(1, total);
+    for k=1:total
+        a_1 = Ap;
+        a_2 = 0;
+        a_3 = Dp;
+        if k <= N_1
+            a(k) = a_1;
+        elseif k <= N_1 + N_2
+            a(k) = a_2;
+        elseif k <= N_1 + N_2 + N_3
+            a(k) = a_3;
+    end
+end
+#+end_src
+
+#+begin_src matlab :exports code :tangle generic_move.m
+function [l, f, a] = generic_move(L, A, D, f_c, T_i)
+    [T_1, T_2, T_3] = get_time_periods(L, A, D, f_c);
+    [N_1, N_2, N_3, f_cp, Ap, Dp] = get_disc_time_periods(T_1, T_2, T_3, L, T_i);
+    l = displacement(N_1, N_2, N_3, f_cp, Ap, Dp, T_i);
+    f = feedrate(N_1, N_2, N_3, f_cp, Ap, Dp, T_i);
+    a = acceleration(N_1, N_2, N_3, f_cp, Ap, Dp, T_i);
+end
+#+end_src
+
+For linear moves, the individual axis commands are found by multiplying by a constant:
+\begin{align*}
+x(k) &= \frac{x_f - x_0}{L} l(k) & \dot{x}(k) &= \frac{x_f - x_0}{L} f(k) & \ddot{x}(k) &= \frac{x_f - x_0}{L} a(k) \\
+y(k) &= \frac{y_f - y_0}{L} l(k) & \dot{y}(k) &= \frac{y_f - y_0}{L} f(k) & \ddot{y}(k) &= \frac{y_f - y_0}{L} a(k)
+\end{align*}
+
+Where:
+\begin{align*}
+(x_0, y_0) &:= \text{Starting position} \\
+(x_f, y_f) &:= \text{Final position}
+\end{align*}
+
+Let's implement this:
+#+begin_src matlab :exports code :tangle linear_move.m
+% Implement G-code G0/G1 command, assume relative mode
+function [x, y, dx, dy, ddx, ddy, l, f, a] = linear_move(...
+        x_f, y_f, f_c, A, D, T_i)
+    L = sqrt(x_f^2 + y_f^2);
+    c_x = x_f/L;
+    c_y = y_f/L;
+    [l, f, a] = generic_move(L, A, D, f_c, T_i);
+    x = c_x*l;
+    dx = c_x*f;
+    ddx = c_x*a;
+    y = c_y*l;
+    dy = c_y*f;
+    ddy = c_y*a;
+end
+#+end_src
+
+For circular moves, the individual axis commands are given by:
+\begin{align*}
+\theta(k) &= \theta_0 + l(k)/R \\
+x(k) &= x_c + R \cos(\theta(k)) &
+\dot{x}(k) &= -f(k)\sin(\theta(k)) &
+\ddot{x}(k) &= -a(k) \sin(\theta(k)) - \frac{1}{R}f^2(k) \cos(\theta(k)) \\
+y(k) &= y_c + R \sin(\theta(k)) &
+\dot{y}(k) &= f(k)\cos(\theta(k)) &
+\ddot{y}(k) &= a(k) \cos(\theta(k)) - \frac{1}{R}f^2(k) \sin(\theta(k))
+\end{align*}
+
+Where:
+\begin{align*}
+\theta_0 &:= \text{Starting angle} \\
+(x_c, y_c) &:= \text{Center of the arc}
+\end{align*}
+Let's implement this:
+#+begin_src matlab :exports code :tangle arc_move.m
+% Implement pseudo G-code G3 command, IJ form,
+% Note: x_f and y_f are relative to current position
+function [x, y, dx, dy, ddx, ddy, l, f, a] = arc_move(...
+        x_f, y_f, I, J, f_c, A, D, T_i)
+    R = sqrt(I^2 + J^2);
+    R_f = sqrt((I - x_f)^2 + (J - y_f)^2);
+    assert(R == R_f, 'Arc center not equidistant from start and end points');
+    theta_0 = atan2(-J, -I);
+    R_x1 = -I;
+    R_y1 = -J;
+    R_x2 = x_f - I;
+    R_y2 = y_f - J;
+    theta_1 = atan2(R_y1, R_x1)
+    theta_2 = atan2(R_y2, R_x2)
+    if theta_1 <= 0
+        theta_1 = theta_1 + pi*2;
+    end
+    if theta_2 <= 0
+        theta_2 = theta_2 + pi*2;
+    end
+    theta_3 = theta_1 - theta_2;
+    if theta_3 <= 0
+        theta_3 = theta_3 + pi*2;
+    end
+    L = theta_3*R;
+    [l, f, a] = generic_move(L, A, D, f_c, T_i);
+    theta = theta_0 + l/R;
+    x = I + R.*cos(theta);
+    dx = -f.*sin(theta);
+    ddx = -a.*sin(theta) - 1/R.*f.^2.*cos(theta);
+    y = J + R.*sin(theta);
+    dy = f.*cos(theta);
+    ddy = a.*cos(theta) - 1/R.*f.^2.*sin(theta);
+end
+#+end_src
+
+
+Now that we have our functions defining our axis commands, we can compute the commands for our specific toolpath.
+#+begin_src matlab :session :exports code :results raw drawer
+% Values from prelab
+f_c = 200;  % mm/s, max feedrate
+A = 1000;  % mm/s^2, max acceleration
+D = -A;  % mm/s^2, max deceleration
+T_i = 0.0001; % s, sample time
+
+[x1, y1, dx1, dy1, ddx1, ddy1, l1, f1, a1] = linear_move(40, 30, f_c, A, D, T_i);
+[x2, y2, dx2, dy2, ddx2, ddy2, l2, f2, a2] = linear_move(20, 0, f_c, A, D, T_i);
+[x3, y3, dx3, dy3, ddx3, ddy3, l3, f3, a3] = arc_move(0, 0, 30, 0, f_c, A, D, T_i);
+x2 = x2 + x1(end);
+x3 = x3 + x2(end);
+y2 = y2 + y1(end);
+y3 = y3 + y2(end);
+l2 = l2 + l1(end);
+l3 = l3 + l2(end);
+#+end_src
+
+#+RESULTS:
+:results:
+org_babel_eoe
+:end:
+
+** Toolpath
+Plotting our generated toolpath:
+#+begin_src matlab :session :exports both :results file
+x = [x1 x2 x3];
+y = [y1 y2 y3];
+f_name = 'toolpath_plot.svg';
+fig = figure('visible', 'off');
+plot(x, y);
+xlabel('X position [mm]');
+ylabel('Y position [mm]');
+saveas(fig, f_name);
+ans = f_name;
+#+end_src
+
+#+RESULTS:
+[[file:toolpath_plot.svg]]
+** Total Movement Plot
+Plotting the displacement, feedrate, and acceleration of our toolpath:
+#+begin_src matlab :session :exports both :results file
+l = [l1 l2 l3];
+f = [f1 f2 f3];
+a = [a1 a2 a3];
+t = [1:1:size(l, 2)]*T_i;
+f_name = 'movement_plot.svg';
+fig = figure('visible', 'off');
+ax1 = subplot(3, 1, 1);
+plot(t, l);
+ylabel('Displacement [mm]')
+ax2 = subplot(3, 1, 2);
+plot(t, f);
+ylim([0 f_c + 10])
+ylabel('Velocity [mm/s]')
+ax3 = subplot(3, 1, 3);
+plot(t, a);
+ylim([D - 100, A + 100]) 
+ylabel('Acceleration [mm/s^2]')
+xlabel('Time [s]');
+linkaxes([ax1,ax2,ax3],'x')
+xlim([0 max(t)]);
+saveas(fig, f_name);
+ans = f_name;
+#+end_src
+
+#+RESULTS:
+[[file:movement_plot.svg]]
+
+** Axis Movement Plot
+Plotting the displacement, feedrate, and acceleration of each axis::
+#+begin_src matlab :session :exports both :results file
+dx = [dx1 dx2 dx3];
+ddx = [ddx1 ddx2 ddx3];
+dy = [dy1 dy2 dy3];
+ddy = [ddy1 ddy2 ddy3];
+f_name = 'axis_movement_plot.svg';
+fig = figure('visible', 'off');
+ax1 = subplot(3, 1, 1);
+plot(t, x);
+hold on;
+plot(t, y);
+l = legend('X Axis', 'Y Axis')
+ylabel('Displacement [mm]')
+ax2 = subplot(3, 1, 2);
+plot(t, dx);
+hold on;
+plot(t, dy);
+ylabel('Velocity [mm/s]')
+ax3 = subplot(3, 1, 3);
+plot(t, ddx);
+hold on;
+plot(t, ddy);
+ylabel('Acceleration [mm/s^2]')
+xlabel('Time [s]');
+linkaxes([ax1,ax2,ax3],'x')
+xlim([0 max(t)]);
+set(l, 'Location', 'NorthWest', 'color', 'none', 'edgecolor', 'none');
+fig.Renderer = 'painters';
+saveas(fig, f_name);
+ans = f_name;
+#+end_src
+
+#+RESULTS:
+[[file:axis_movement_plot.svg]]
+
