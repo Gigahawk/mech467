@@ -301,9 +301,8 @@ l3 = l3 + l2(end);
 #+end_src
 
 #+RESULTS:
-:results:
-org_babel_eoe
-:end:
+#+begin_src matlab
+#+end_src
 
 ** Toolpath
 Plotting our generated toolpath:
