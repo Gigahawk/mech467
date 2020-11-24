@@ -2,8 +2,6 @@
 #+AUTHOR: Jasper Chan - 37467164
 #+SUBTITLE: Simulation of Contouring Performance in Coordinated Two Axis Motion
 
-#+OPTIONS: toc:nil
-
 #+LATEX_HEADER: \definecolor{bg}{rgb}{0.95,0.95,0.95}
 #+LATEX_HEADER: \setminted{frame=single,bgcolor=bg,samepage=true}
 #+LATEX_HEADER: \setlength{\parindent}{0pt}
@@ -27,7 +25,7 @@
 #+end_src
 
 #+RESULTS:
-| arc_move.m | linear_move.m | generic_move.m | acceleration.m | feedrate.m | displacement.m | get_disc_time_periods.m | get_time_periods.m |
+| plot_table_movement.m | plot_table_path.m | extract_sim_data.m | get_lli.m | arc_move.m | linear_move.m | generic_move.m | acceleration.m | feedrate.m | displacement.m | get_disc_time_periods.m | get_time_periods.m |
 
 Note: when not specified, all units are SI without prefixes.
 * Trajectory Generation
@@ -283,7 +281,7 @@ end
 
 
 Now that we have our functions defining our axis commands, we can compute the commands for our specific toolpath.
-#+begin_src matlab :session :exports code :results raw drawer
+#+begin_src matlab :session :exports code :results code
 % Values from prelab
 f_c = 200;  % mm/s, max feedrate
 A = 1000;  % mm/s^2, max acceleration
@@ -292,7 +290,8 @@ T_i = 0.0001; % s, sample time
 
 [x1, y1, dx1, dy1, ddx1, ddy1, l1, f1, a1] = linear_move(40, 30, f_c, A, D, T_i);
 [x2, y2, dx2, dy2, ddx2, ddy2, l2, f2, a2] = linear_move(20, 0, f_c, A, D, T_i);
-[x3, y3, dx3, dy3, ddx3, ddy3, l3, f3, a3] = arc_move(0, 0, 30, 0, f_c, A, D, T_i);
+[x3, y3, dx3, dy3, ddx3, ddy3, l3, f3, a3] = arc_move(...
+    0, 0, 30, 0, f_c, A, D, T_i);
 x2 = x2 + x1(end);
 x3 = x3 + x2(end);
 y2 = y2 + y1(end);
@@ -389,3 +388,588 @@ ans = f_name;
 #+RESULTS:
 [[file:axis_movement_plot.svg]]
 
+* Two-Axis Controller Design
+We want a Lead-Lag Integrator to be our controller for each axis, let's write a function to generate one based on our desired crossover frequency $\omega_c$ and phase margin.
+#+begin_src matlab :exports code :tangle get_lli.m
+function lli = get_lli(G_ol, omega_c, pm)
+    K_i = omega_c/10;
+    integral_action = tf([1 K_i], [1 0]);
+    % wout is in degrees
+    [H, wout] = bode(G_ol, omega_c);
+    phi = pm - (180 + wout);
+    a = (sind(phi) + 1)/(1 - sind(phi));
+    tau = 1/(omega_c *sqrt(a));
+    K_tot = 1/H;
+    K_comp = K_tot/sqrt(a);
+    num = K_comp*[a*tau 1];
+    den = [tau 1];
+    C_comp = tf(num, den);
+    lli = integral_action*C_comp;
+end
+#+end_src
+
+Defining the open loop transfer function for each axis:
+#+begin_src matlab :session :exports both :results code output
+% Values from prelab
+K_a = 1;  % A/V, Amplifier gain
+K_t = 0.49;  % Nm/A, Motor torque constant
+K_e = 1.59;  % mm/rad, Encoder gain
+J_ex = 4.36*10^-4;  % kgm^2, Rotational inertia (x axis)
+J_ey = 3*10^-4;  % kgm^2, Rotational inertia (y axis)
+B_x = 0.0094;  % Nm/(rad/s), Viscous friction(x axis)
+B_y = 0.0091;  % Nm/(rad/s), Viscous friction(y axis)
+
+G_olx = K_a* K_t*tf([1],[J_ex B_x])*tf([1], [1 0])*K_e
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+G_olx =
+ 
+          0.7791
+  -----------------------
+  0.000436 s^2 + 0.0094 s
+ 
+Continuous-time transfer function.
+#+end_src
+
+#+begin_src matlab :session :exports both :results code output
+G_oly = K_a* K_t*tf([1],[J_ey B_y])*tf([1], [1 0])*K_e
+#+end_src
+
+#+RESULTS:
+: G_oly =
+:  
+:          0.7791
+:   ---------------------
+:   0.0003 s^2 + 0.0091 s
+:  
+: Continuous-time transfer function.
+** Controller Design
+Let's find the controllers for each of our scenarios:
+#+begin_src matlab :session :exports both :results code output
+lli_lx = get_lli(G_olx, 20*2*pi, 60)
+#+end_src
+
+#+RESULTS:
+: lli_lx =
+:  
+:   0.07135 s^2 + 4.137 s + 40.72
+:   -----------------------------
+:         0.002876 s^2 + s
+:  
+: Continuous-time transfer function.
+
+#+begin_src matlab :session :exports both :results code output
+lli_hx = get_lli(G_olx, 40*2*pi, 60)
+#+end_src
+
+#+RESULTS:
+: lli_hx =
+:  
+:   0.1412 s^2 + 14.7 s + 280.3
+:   ---------------------------
+:        0.001251 s^2 + s
+:  
+: Continuous-time transfer function.
+
+#+begin_src matlab :session :exports both :results code output
+lli_ly = get_lli(G_oly, 20*2*pi, 60)
+#+end_src
+
+#+RESULTS:
+: lli_ly =
+:  
+:   0.04978 s^2 + 3.126 s + 31.42
+:   -----------------------------
+:         0.003181 s^2 + s
+:  
+: Continuous-time transfer function.
+#+begin_src matlab :session :exports both :results code output
+lli_hy = get_lli(G_oly, 40*2*pi, 60)
+#+end_src
+
+#+RESULTS:
+: lli_hy =
+:  
+:   0.09748 s^2 + 10.62 s + 205.3
+:   -----------------------------
+:         0.001327 s^2 + s
+:  
+: Continuous-time transfer function.
+** Bode Plots
+*** Open loop
+#+begin_src matlab :session :exports both :results file
+G_ol_lx = G_olx*lli_lx;
+G_ol_hx = G_olx*lli_hx;
+f_name = 'bode_openloop.svg';
+fig = figure('visible', 'off');
+bode(G_olx, G_ol_lx, G_ol_hx);
+children = get(fig, 'Children');
+mchild = children(3)
+l = legend(mchild, 'No controller', 'Low bandwidth', 'High bandwidth')
+set(l, 'color', 'none', 'edgecolor', 'none');
+saveas(fig, f_name);
+ans = f_name;
+#+end_src
+
+#+RESULTS:
+[[file:bode_openloop.svg]]
+*** Closed Loop
+#+begin_src matlab :session :exports both :results file
+G_cl_lx = feedback(G_ol_lx, 1);
+G_cl_hx = feedback(G_ol_hx, 1);
+f_name = 'bode_closedloop.svg';
+fig = figure('visible', 'off');
+bode(G_cl_lx, G_cl_hx);
+children = get(fig, 'Children');
+mchild = children(3)
+l = legend(mchild, 'Low bandwidth', 'High bandwidth')
+set(l, 'color', 'none', 'edgecolor', 'none');
+set(l, 'Location', 'West');
+saveas(fig, f_name);
+ans = f_name;
+#+end_src
+
+#+RESULTS:
+[[file:bode_closedloop.svg]]
+
+** System Characteristics
+Defining all our systems:
+#+begin_src matlab :session :exports both :results code output
+G_ol_ly = G_oly*lli_ly;
+G_ol_hy = G_oly*lli_hy;
+G_olxz = c2d(G_olx, T_i, 'zoh');
+G_olyz = c2d(G_oly, T_i, 'zoh');
+lli_lxz = c2d(lli_lx, T_i, 'tustin');
+lli_hxz = c2d(lli_hx, T_i, 'tustin');
+lli_lyz = c2d(lli_ly, T_i, 'tustin');
+lli_hyz = c2d(lli_hy, T_i, 'tustin');
+G_ol_lxz = G_olxz*lli_lxz;
+G_ol_hxz = G_olxz*lli_hxz;
+G_ol_lyz = G_olyz*lli_lyz;
+G_ol_hyz = G_olyz*lli_hyz;
+
+G_cl_ly = feedback(G_ol_ly, 1);
+G_cl_hy = feedback(G_ol_hy, 1);
+G_cl_lxz = feedback(G_ol_lxz, 1);
+G_cl_hxz = feedback(G_ol_hxz, 1);
+G_cl_lyz = feedback(G_ol_lyz, 1);
+G_cl_hyz = feedback(G_ol_hyz, 1);
+systems = {G_cl_lx, G_cl_hx,...
+           G_cl_ly, G_cl_hy,...
+           G_cl_lxz, G_cl_hxz,...
+           G_cl_lyz, G_cl_hyz};
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+#+end_src
+
+Creating a table to hold our data:
+#+begin_src matlab :session :exports code :results output code
+r_names = {'G_lx(s)'; 'G_hx(s)';...
+           'G_ly(s)'; 'G_hy(s)';...
+           'G_lx(z)'; 'G_hx(z)';...
+           'G_ly(z)'; 'G_hy(z)'};
+c_names = {'Bandwidth', 'Overshoot', 'Rise Time'};
+v_types = {'double', 'double', 'double'};
+
+tb = table('Size', [8 3],...
+           'VariableTypes', v_types,...
+           'RowNames', r_names,...
+           'VariableNames', c_names)
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+tb =
+  8x3 table
+               Bandwidth    Overshoot    Rise Time
+               _________    _________    _________
+    G_lx(s)        0            0            0    
+    G_hx(s)        0            0            0    
+    G_ly(s)        0            0            0    
+    G_hy(s)        0            0            0    
+    G_lx(z)        0            0            0    
+    G_hx(z)        0            0            0    
+    G_ly(z)        0            0            0    
+    G_hy(z)        0            0            0
+#+end_src
+
+Filling in our table:
+#+begin_src matlab :session :exports both :results output code
+for i=1:size(r_names, 1)
+    n = char(r_names(i));
+    s = systems{i};
+    bw = bandwidth(s);
+    sinfo = stepinfo(s);
+    os = sinfo.Overshoot;
+    rt = sinfo.RiseTime;
+    tb(n,:) = {bw, os, rt};
+end
+tb
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+tb =
+  8x3 table
+               Bandwidth    Overshoot    Rise Time
+               _________    _________    _________
+    G_lx(s)     206.12        22.11      0.0091345
+    G_hx(s)     411.42       24.127      0.0044602
+    G_ly(s)     206.38       20.903      0.0092881
+    G_hy(s)     411.78       23.234      0.0045051
+    G_lx(z)     207.32       22.375          0.009
+    G_hx(z)     416.54       24.613         0.0044
+    G_ly(z)     207.53       21.175         0.0093
+    G_hy(z)     416.78       23.731         0.0045
+#+end_src
+
+\newpage
+Let's also find the poles of each system:
+#+begin_src matlab :session :exports both :results output
+% Use shorter names to fit table on page
+r_names_short = {'lxs'; 'hxs';...
+                 'lys'; 'hys';...
+                 'lxz'; 'hxz';...
+                 'lyz'; 'hyz'};
+poles = [];
+for i=1:size(r_names, 1)
+    n = char(r_names(i));
+    s = systems{i};
+    p = pole(s)';
+    poles = [poles; p];
+end
+format
+array2table(poles, 'RowNames', r_names_short)
+#+end_src
+
+#+RESULTS:
+#+begin_example
+ans =
+  8x4 table
+                poles1               poles2                poles3                poles4      
+           _________________    _________________    __________________    __________________
+    lxs    -140.65-79.535i      -140.65+79.535i      -75.117+0i            -12.901+0i        
+    hxs    -394.79+0i           -200.63-18.798i      -200.63+18.798i       -24.981+0i        
+    lys    -129.94-101.49i      -129.94+101.49i        -71.7+0i            -13.161+0i        
+    hys       -298-93.071i         -298+93.071i       -162.7+0i            -25.342+0i        
+    lxz    0.99871+0i           0.99256+0i           0.98609-0.0080915i    0.98609+0.0080915i
+    hxz    0.99751+0i           0.98228+0i           0.97496+0i            0.96525+0i        
+    lyz    0.98713-0.010173i    0.98713+0.010173i    0.99288+0i            0.99868+0i        
+    hyz    0.99747+0i           0.98426+0i           0.97084-0.010976i     0.97084+0.010976i
+#+end_example
+
+
+And the zeros:
+#+begin_src matlab :session :exports both :results output code
+zeros = [];
+for i=1:size(r_names, 1)
+    n = char(r_names(i));
+    s = systems{i};
+    z = zero(s)';
+    z(end+1:3) = nan;  % Pad array to be same length
+    zeros = [zeros; z];
+end
+array2table(zeros, 'RowNames', r_names)
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+ans =
+  8x3 table
+                zeros1     zeros2     zeros3 
+               ________    _______    _______
+    G_lx(s)     -45.409    -12.566        NaN
+    G_hx(s)     -79.009    -25.133        NaN
+    G_ly(s)     -50.225    -12.566        NaN
+    G_hy(s)     -83.805    -25.133        NaN
+    G_lx(z)    -0.99928    0.99874    0.99547
+    G_hx(z)    -0.99928    0.99749    0.99213
+    G_ly(z)    -0.99899    0.99874    0.99499
+    G_hy(z)    -0.99899    0.99749    0.99165
+#+end_src
+
+* Contouring Performance Simulation
+** Controller Implementation
+#+begin_src matlab :session :exports none :results none :eval never-export
+simulink
+#+end_src
+First let's define our reference inputs as timeseries and specify some controllers:
+#+begin_src matlab :session :exports both :results code output
+xr = timeseries(x', t);
+yr = timeseries(y', t);
+contx_z = lli_lxz;
+conty_z = lli_lyz;
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+#+end_src
+
+Our system then looks like:
+#+begin_src matlab :session :exports none :results none
+open_system('xy_table');
+print -dsvg -s 'xy_table_raw.svg';
+#+end_src
+#+begin_src shell :exports results :results file
+inkscape xy_table_raw.svg --export-text-to-path --export-plain-svg -o xy_table_simulink.svg
+printf 'xy_table_simulink.svg'
+#+end_src
+
+#+RESULTS:
+[[file:xy_table_simulink.svg]]
+
+Defining a function to extract the values out from the simulation:
+#+begin_src matlab :exports code :tangle extract_sim_data.m
+function [t, xr, xo, yr, yo] = extract_sim_data(out)
+    t = out.simout.Time;
+    d = out.simout.Data;
+    xr = d(:,1);
+    xo = d(:,2);
+    yr = d(:,3);
+    yo = d(:,4);
+end
+#+end_src
+
+*** Simulations
+Running the simulation with the low bandwidth controllers:
+#+begin_src matlab :session :exports both :results code output
+contx_z = lli_lxz;
+conty_z = lli_lyz;
+[l_t, l_xr, l_xo, l_yr, l_yo] = extract_sim_data(...
+    sim('xy_table', max(xr.Time)));
+#+end_src
+
+Running the simulation with the high bandwidth controllers:
+#+begin_src matlab :session :exports both :results code output
+contx_z = lli_hxz;
+conty_z = lli_hyz;
+[h_t, h_xr, h_xo, h_yr, h_yo] = extract_sim_data(...
+    sim('xy_table', max(xr.Time)));
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+#+end_src
+
+Running the simulation with mismatched controllers:
+#+begin_src matlab :session :exports both :results code output
+contx_z = lli_hxz;
+conty_z = lli_lyz;
+[m_t, m_xr, m_xo, m_yr, m_yo] = extract_sim_data(...
+    sim('xy_table', max(xr.Time)));
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+#+end_src
+*** Plots
+The plots below show that the system is fairly good at following the reference trajectory, with less error when a higher bandwidth controller is used.
+#+begin_src matlab :exports code :tangle plot_table_path.m
+function f_name = plot_table_path(xr, xo, yr, yo, name)
+    fig = figure('visible', 'off');
+    plot(xo, yo, 'r');
+    hold on;
+    plot(xr, yr, 'b--');
+    hold off;
+    xlabel('X axis [mm]');
+    ylabel('Y axis [mm]');
+    title(sprintf(...
+        'Plotter output: %s Controller', name));
+    l = legend('Plotter path', 'Reference path');
+    set(l, 'Location', 'SouthWest', 'color', 'none', 'edgecolor', 'none');
+    f_name = sprintf('table_plot_%s.svg', name);
+    fig.Renderer = 'painters';
+    saveas(fig, f_name);
+end
+#+end_src
+
+
+#+begin_src matlab :session :exports both :results file
+f_name = plot_table_path(...
+    l_xr, l_xo, l_yr, l_yo, 'Low Bandwidth');
+ans = f_name;
+#+end_src
+
+#+RESULTS:
+[[file:table_plot_Low Bandwidth.svg]]
+
+
+#+begin_src matlab :session :exports both :results file
+f_name = plot_table_path(...
+    h_xr, h_xo, h_yr, h_yo, 'High Bandwidth');
+ans = f_name;
+#+end_src
+
+#+RESULTS:
+[[file:table_plot_High Bandwidth.svg]]
+
+#+begin_src matlab :session :exports both :results file
+f_name = plot_table_path(...
+    m_xr, m_xo, m_yr, m_yo, 'Mismatched');
+ans = f_name;
+#+end_src
+
+#+RESULTS:
+[[file:table_plot_Mismatched.svg]]
+
+#+begin_src matlab :exports code :tangle plot_table_movement.m
+function f_name = plot_table_movement(t, xr, xo, yr, yo, name)
+    fig = figure('visible', 'off');
+    subplot(2, 1, 1);
+    plot(t, xo, 'r');
+    hold on;
+    plot(t, xr, 'b--');
+    title(sprintf(...
+        'Plotter Axis Output: %s Controller', name));
+    ylabel('X axis [mm]');
+    l = legend('Plotter path', 'Reference path');
+    subplot(2, 1, 2);
+    plot(t, yo, 'r');
+    hold on;
+    plot(t, yr, 'b--');
+    xlabel('Time [s]');
+    ylabel('Y axis [mm]');
+    set(l, 'Location', 'NorthWest', 'color', 'none', 'edgecolor', 'none');
+    f_name = sprintf('table_movement_%s.svg', name);
+    fig.Renderer = 'painters';
+    saveas(fig, f_name);
+end
+#+end_src
+#+begin_src matlab :session :exports both :results file
+f_name = plot_table_movement(...
+    l_t, l_xr, l_xo, l_yr, l_yo, 'Low Bandwidth');
+ans = f_name;
+#+end_src
+
+#+RESULTS:
+[[file:table_movement_Low Bandwidth.svg]]
+
+#+begin_src matlab :session :exports both :results file
+f_name = plot_table_movement(...
+    h_t, h_xr, h_xo, h_yr, h_yo, 'High Bandwidth');
+ans = f_name;
+#+end_src
+
+#+RESULTS:
+[[file:table_movement_High Bandwidth.svg]]
+
+#+begin_src matlab :session :exports both :results file
+f_name = plot_table_movement(...
+    m_t, m_xr, m_xo, m_yr, m_yo, 'Mismatched');
+ans = f_name;
+#+end_src
+
+#+RESULTS:
+[[file:table_movement_Mismatched.svg]]
+** Custom Trajectory
+Let's first define the machine values for the table:
+#+begin_src matlab :session :exports code :results code
+% Values from prelab
+f_c = 100;  % mm/s, max feedrate
+A = 250;  % mm/s^2, max acceleration
+D = -A;  % mm/s^2, max deceleration
+T_i = 0.0001; % s, sample time
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+org_babel_eoe
+#+end_src
+
+Now we can load and parse the GCode file I've prepared.
+#+begin_src matlab :session :exports code :results code
+% Rudimentary GCode parser
+gcode = fileread('custom_toolpath/spongebob_inc.gcode');
+C = textscan(gcode, 'G1 X%f Y%f');
+x_coms = C{1};
+y_coms = C{2};
+coms = [x_coms y_coms];
+x = []
+y = []
+x_last = 0;
+y_last = 0;
+for i=1:size(coms, 1)
+    c = coms(i,:);
+    x_i = c(1);
+    y_i = c(2);
+    [xn, yn] = linear_move(x_i, y_i, f_c, A, D, T_i);
+    xn = xn + x_last;
+    yn = yn + y_last;
+    x = [x xn];
+    y = [y yn];
+    if size(xn, 2) > 0
+        x_last = xn(end);
+        y_last = yn(end);
+    end
+end
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+org_babel_eoe
+#+end_src
+
+Plotting the reference input:
+#+begin_src matlab :session :exports both :results file
+f_name = 'custom_toolpath_plot.svg';
+fig = figure('visible', 'off',...
+       'Position', [0 0 600 600]);
+plot(x, y);
+xlim([0 100]);
+ylim([0 100]);
+title('Reference toolpath');
+xlabel('X axis [mm]');
+ylabel('Y axis [mm]');
+saveas(fig, f_name);
+ans = f_name;
+#+end_src
+
+#+RESULTS:
+[[file:custom_toolpath_plot.svg]]
+The toolpath is unfortunately a long sequence linear moves since the source drawing would have been too labour intensive to trace using arcs, however you have to admit it's pretty poggers.
+
+Let's simulate our toolpath with the high bandwidth controller:
+#+begin_src matlab :session :exports code :results code
+t = [1:1:size(x, 2)]*T_i;
+xr = timeseries(x', t);
+yr = timeseries(y', t);
+contx_z = lli_hxz;
+conty_z = lli_hyz;
+[s_t, s_xr, s_xo, s_yr, s_yo] = extract_sim_data(...
+    sim('xy_table', max(xr.Time)));
+#+end_src
+
+Plotting the results:
+#+begin_src matlab :session :exports both :results file
+f_name = plot_table_path(...
+    s_xr, s_xo, s_yr, s_yo, 'Spongebob High Bandwidth');
+ans = f_name;
+#+end_src
+
+#+RESULTS:
+[[file:table_plot_High Bandwidth.svg]]
+
+#+begin_src matlab :session :exports both :results file
+f_name = plot_table_movement(...
+    s_t, s_xr, s_xo, s_yr, s_yo, 'Spongebob High Bandwidth');
+ans = f_name;
+#+end_src
+
+#+RESULTS:
+[[file:table_movement_High Bandwidth.svg]]
+
+The plots look good, let's export our toolpath:
+#+begin_src matlab :session :exports both :results code output
+traj.t = t';
+traj.x = x';
+traj.y = y';
+save JasperTraj traj
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+#+end_src
