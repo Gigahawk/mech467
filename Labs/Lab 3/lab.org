@@ -1,0 +1,852 @@
+#+TITLE: MECH 467 Lab 3:
+#+AUTHOR: Jasper Chan - 37467164 @@latex:\\@@ jasperchan515@gmail.com
+#+SUBTITLE: Simulation of Contouring Performance in Coordinated Two Axis Motion
+
+#+OPTIONS: title:nil toc:nil
+
+#+LATEX_HEADER: \definecolor{bg}{rgb}{0.95,0.95,0.95}
+#+LATEX_HEADER: \setminted{frame=single,bgcolor=bg,samepage=true}
+#+LATEX_HEADER: \setlength{\parindent}{0pt}
+#+LATEX_HEADER: \sisetup{per-mode=fraction}
+#+LATEX_HEADER: \usepackage{float}
+#+LATEX_HEADER: \usepackage{svg}
+#+LATEX_HEADER: \usepackage{cancel}
+#+LATEX_HEADER: \usepackage{amssymb}
+#+LATEX_HEADER: \usepackage{mathtools, nccmath}
+#+LATEX_HEADER: \newcommand{\Lwrap}[1]{\left\{#1\right\}}
+#+LATEX_HEADER: \newcommand{\Lagr}[1]{\mathcal{L}\Lwrap{#1}}
+#+LATEX_HEADER: \newcommand{\Lagri}[1]{\mathcal{L}^{-1}\Lwrap{#1}}
+#+LATEX_HEADER: \newcommand{\Ztrans}[1]{\mathcal{Z}\Lwrap{#1}}
+#+LATEX_HEADER: \newcommand{\Ztransi}[1]{\mathcal{Z}^{-1}\Lwrap{#1}}
+#+LATEX_HEADER: \newcommand{\ZOH}[1]{\text{ZOH}\left(#1\right)}
+#+LATEX_HEADER: \DeclarePairedDelimiter{\ceil}{\lceil}{\rceil}
+#+LATEX_HEADER: \makeatletter \AtBeginEnvironment{minted}{\dontdofcolorbox} \def\dontdofcolorbox{\renewcommand\fcolorbox[4][]{##4}} \makeatother
+
+#+BEGIN_EXPORT latex
+\makeatletter
+\begin{titlepage}
+\begin{center}
+\vspace*{2in}
+{\Large \@title \par}
+\vspace{1in}
+{\Large \@author \par}
+\vspace{3in}
+{\large \@date}
+\end{center}
+\end{titlepage}
+\makeatother
+#+END_EXPORT
+
+#+BEGIN_EXPORT latex
+\begin{abstract}
+The purpose of this report is to analyze the performance of the XY table using the controllers and toolpaths developed in the prelab.
+The controllers will be implemented on the real system, and the toolpath executed.
+The position of the table will be recorded while the table is in operation.
+The data can then be compared with data generated using the same set of controllers and toolpath via simulation.
+\end{abstract}
+#+END_EXPORT
+
+\tableofcontents
+
+#+begin_src elisp :session :exports none
+(org-babel-tangle)
+#+end_src
+
+#+RESULTS:
+| plot_cont_err_sb.m | plot_cont_err.m | plot_cont_err_internal.m | get_cont_err.m | plot_track_err.m | extract_sim_data.m | arc_move.m | linear_move.m | generic_move.m | acceleration.m | feedrate.m | displacement.m | get_disc_time_periods.m | get_time_periods.m | get_lli.m |
+
+#+begin_src matlab :exports none :tangle get_lli.m
+function lli = get_lli(G_ol, omega_c, pm)
+    K_i = omega_c/10;
+    integral_action = tf([1 K_i], [1 0]);
+    % wout is in degrees
+    [H, wout] = bode(G_ol, omega_c);
+    phi = pm - (180 + wout);
+    a = (sind(phi) + 1)/(1 - sind(phi));
+    tau = 1/(omega_c *sqrt(a));
+    K_tot = 1/H;
+    K_comp = K_tot/sqrt(a);
+    num = K_comp*[a*tau 1];
+    den = [tau 1];
+    C_comp = tf(num, den);
+    lli = integral_action*C_comp;
+end
+#+end_src
+#+begin_src matlab :exports none :tangle get_time_periods.m
+function [T_1, T_2, T_3] = get_time_periods(L, A, D, f_c)
+    T_2 = L/f_c - (1/(2*A) - 1/(2*D))*f_c;
+    if T_2 < 0
+        T_2 = 0;
+        f_c = sqrt(2*A*D*L/(D - A));
+    end
+    T_1 = f_c/A;
+    T_3 = -f_c/D;
+end
+#+end_src
+#+begin_src matlab :exports none :tangle get_disc_time_periods.m
+function [N_1, N_2, N_3, f_cp, Ap, Dp] = get_disc_time_periods(...
+        T_1, T_2, T_3, L, T_i)
+    N_1 = ceil(T_1/T_i);
+    N_2 = ceil(T_2/T_i);
+    N_3 = ceil(T_3/T_i);
+    f_cp = 2*L/(T_i*(N_1 + 2*N_2 + N_3));
+    Ap = f_cp/(T_i*N_1);
+    Dp = -f_cp/(T_i*N_3);
+end
+#+end_src
+#+begin_src matlab :exports none :tangle displacement.m
+function l = displacement(N_1, N_2, N_3, f_cp, Ap, Dp, T_i)
+    total = N_1 + N_2 + N_3;
+    l = zeros(1, total);
+    for k=1:total
+        k_1 = min(k, N_1);
+        k_2 = min(k - N_1, N_2);
+        k_3 = min(k - (N_1 + N_2), N_3);
+        l_1 = 0.5*Ap*(k_1*T_i)^2;
+        l_2 = f_cp*(k_2*T_i) + l_1;
+        l_3 = 0.5*Dp*(k_3*T_i)^2 + f_cp*(k_3*T_i) + l_2;
+        if k <= N_1
+            l(k) = l_1;
+        elseif k <= N_1 + N_2
+            l(k) = l_2;
+        elseif k <= N_1 + N_2 + N_3
+            l(k) = l_3;
+    end
+end
+#+end_src
+#+begin_src matlab :exports none :tangle feedrate.m
+function f = feedrate(N_1, N_2, N_3, f_cp, Ap, Dp, T_i)
+    total = N_1 + N_2 + N_3;
+    f = zeros(1, total);
+    for k=1:total
+        f_1 = Ap*(k*T_i);
+        f_2 = f_cp;
+        f_3 = Dp*((k - (N_1 + N_2))*T_i) + f_cp;
+        if k <= N_1
+            f(k) = f_1;
+        elseif k <= N_1 + N_2
+            f(k) = f_2;
+        elseif k <= N_1 + N_2 + N_3
+            f(k) = f_3;
+    end
+end
+#+end_src
+#+begin_src matlab :exports none :tangle acceleration.m
+function a = acceleration(N_1, N_2, N_3, f_cp, Ap, Dp, T_i)
+    total = N_1 + N_2 + N_3;
+    a = zeros(1, total);
+    for k=1:total
+        a_1 = Ap;
+        a_2 = 0;
+        a_3 = Dp;
+        if k <= N_1
+            a(k) = a_1;
+        elseif k <= N_1 + N_2
+            a(k) = a_2;
+        elseif k <= N_1 + N_2 + N_3
+            a(k) = a_3;
+    end
+end
+#+end_src
+#+begin_src matlab :exports none :tangle generic_move.m
+function [l, f, a] = generic_move(L, A, D, f_c, T_i)
+    [T_1, T_2, T_3] = get_time_periods(L, A, D, f_c);
+    [N_1, N_2, N_3, f_cp, Ap, Dp] = get_disc_time_periods(T_1, T_2, T_3, L, T_i);
+    l = displacement(N_1, N_2, N_3, f_cp, Ap, Dp, T_i);
+    f = feedrate(N_1, N_2, N_3, f_cp, Ap, Dp, T_i);
+    a = acceleration(N_1, N_2, N_3, f_cp, Ap, Dp, T_i);
+end
+#+end_src
+#+begin_src matlab :exports none :tangle linear_move.m
+% Implement G-code G0/G1 command, assume relative mode
+function [x, y, dx, dy, ddx, ddy, l, f, a] = linear_move(...
+        x_f, y_f, f_c, A, D, T_i)
+    L = sqrt(x_f^2 + y_f^2);
+    c_x = x_f/L;
+    c_y = y_f/L;
+    [l, f, a] = generic_move(L, A, D, f_c, T_i);
+    x = c_x*l;
+    dx = c_x*f;
+    ddx = c_x*a;
+    y = c_y*l;
+    dy = c_y*f;
+    ddy = c_y*a;
+end
+#+end_src
+#+begin_src matlab :exports none :tangle arc_move.m
+% Implement pseudo G-code G3 command, IJ form,
+% Note: x_f and y_f are relative to current position
+function [x, y, dx, dy, ddx, ddy, l, f, a] = arc_move(...
+        x_f, y_f, I, J, f_c, A, D, T_i)
+    R = sqrt(I^2 + J^2);
+    R_f = sqrt((I - x_f)^2 + (J - y_f)^2);
+    assert(R == R_f, 'Arc center not equidistant from start and end points');
+    theta_0 = atan2(-J, -I);
+    R_x1 = -I;
+    R_y1 = -J;
+    R_x2 = x_f - I;
+    R_y2 = y_f - J;
+    theta_1 = atan2(R_y1, R_x1)
+    theta_2 = atan2(R_y2, R_x2)
+    if theta_1 <= 0
+        theta_1 = theta_1 + pi*2;
+    end
+    if theta_2 <= 0
+        theta_2 = theta_2 + pi*2;
+    end
+    theta_3 = theta_1 - theta_2;
+    if theta_3 <= 0
+        theta_3 = theta_3 + pi*2;
+    end
+    L = theta_3*R;
+    [l, f, a] = generic_move(L, A, D, f_c, T_i);
+    theta = theta_0 + l/R;
+    x = I + R.*cos(theta);
+    dx = -f.*sin(theta);
+    ddx = -a.*sin(theta) - 1/R.*f.^2.*cos(theta);
+    y = J + R.*sin(theta);
+    dy = f.*cos(theta);
+    ddy = a.*cos(theta) - 1/R.*f.^2.*sin(theta);
+end
+#+end_src
+#+begin_src matlab :exports none :tangle extract_sim_data.m
+function [t, xr, xo, yr, yo] = extract_sim_data(out)
+    t = out.simout.Time;
+    d = out.simout.Data;
+    xr = d(:,1);
+    xo = d(:,2);
+    yr = d(:,3);
+    yo = d(:,4);
+end
+#+end_src
+
+Note: when not specified, all units are SI without prefixes.
+* Introduction
+
+* Effect of Bandwidth
+** Setup
+First let's define all of the parameters required from the machine:
+#+begin_src matlab :session :exports code :results code
+% Values from prelab
+T_i = 0.0001; % s, sample time
+K_a = 1;  % A/V, Amplifier gain
+K_t = 0.49;  % Nm/A, Motor torque constant
+K_e = 1.59;  % mm/rad, Encoder gain
+J_ex = 4.36*10^-4;  % kgm^2, Rotational inertia (x axis)
+J_ey = 3*10^-4;  % kgm^2, Rotational inertia (y axis)
+B_x = 0.0094;  % Nm/(rad/s), Viscous friction(x axis)
+B_y = 0.0091;  % Nm/(rad/s), Viscous friction(y axis)
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+org_babel_eoe
+#+end_src
+
+Let's also define the motion dynamics so that we can derive the lead-lag integrators we from the prelab.
+#+begin_src matlab :session :exports code :results code
+G_olx = K_a* K_t*tf([1],[J_ex B_x])*tf([1], [1 0])*K_e;
+G_oly = K_a* K_t*tf([1],[J_ey B_y])*tf([1], [1 0])*K_e
+
+lli_lx = get_lli(G_olx, 20*2*pi, 60);
+lli_hx = get_lli(G_olx, 40*2*pi, 60);
+lli_ly = get_lli(G_oly, 20*2*pi, 60);
+lli_hy = get_lli(G_oly, 40*2*pi, 60);
+lli_lxz = c2d(lli_lx, T_i, 'tustin');
+lli_hxz = c2d(lli_hx, T_i, 'tustin');
+lli_lyz = c2d(lli_ly, T_i, 'tustin');
+lli_hyz = c2d(lli_hy, T_i, 'tustin');
+
+% Start with low bandwidth controllers
+contx_z = lli_lxz;
+conty_z = lli_lyz;
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+org_babel_eoe
+#+end_src
+And finally regenerate our toolpath:
+#+begin_src matlab :session :exports code :results code
+% Values from prelab
+f_c = 200;  % mm/s, max feedrate
+A = 1000;  % mm/s^2, max acceleration
+D = -A;  % mm/s^2, max deceleration
+T_i = 0.0001; % s, sample time
+
+[x1, y1, dx1, dy1, ddx1, ddy1, l1, f1, a1] = linear_move(40, 30, f_c, A, D, T_i);
+[x2, y2, dx2, dy2, ddx2, ddy2, l2, f2, a2] = linear_move(20, 0, f_c, A, D, T_i);
+[x3, y3, dx3, dy3, ddx3, ddy3, l3, f3, a3] = arc_move(...
+    0, 0, 30, 0, f_c, A, D, T_i);
+x2 = x2 + x1(end);
+x3 = x3 + x2(end);
+y2 = y2 + y1(end);
+y3 = y3 + y2(end);
+x = [x1 x2 x3];
+y = [y1 y2 y3];
+t = [1:1:size(x, 2)]*T_i;
+xr = timeseries(x', t);
+yr = timeseries(y', t);
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+org_babel_eoe
+#+end_src
+Now that we have all the dependencies ready, we can load our Simulink model:
+#+begin_src matlab :session :exports none :results none
+open_system('xy_table');
+print -dsvg -s 'xy_table_raw.svg';
+#+end_src
+#+begin_src shell :exports results :results file
+inkscape xy_table_raw.svg --export-text-to-path --export-plain-svg -o xy_table_simulink.svg
+printf 'xy_table_simulink.svg'
+#+end_src
+
+#+RESULTS:
+[[file:xy_table_simulink.svg]]
+Now we can run the simulation for each of the three cases:
+#+begin_src matlab :session :exports both :results code output
+contx_z = lli_lxz;
+conty_z = lli_lyz;
+[l_t, l_xr, l_xo, l_yr, l_yo] = extract_sim_data(...
+    sim('xy_table', max(xr.Time)));
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+#+end_src
+
+#+begin_src matlab :session :exports both :results code output
+contx_z = lli_hxz;
+conty_z = lli_hyz;
+[h_t, h_xr, h_xo, h_yr, h_yo] = extract_sim_data(...
+    sim('xy_table', max(xr.Time)));
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+#+end_src
+
+#+begin_src matlab :session :exports both :results code output
+contx_z = lli_hxz;
+conty_z = lli_lyz;
+[m_t, m_xr, m_xo, m_yr, m_yo] = extract_sim_data(...
+    sim('xy_table', max(xr.Time)));
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+#+end_src
+** Tracking Errors Over Time
+Defining a function to plot the tracking errors:
+#+begin_src matlab :exports code :tangle plot_track_err.m
+function [f_name, fig, ax1] = plot_track_err(t, xr, xo, yr, yo, name, fig)
+    if ~exist('fig', 'var')
+        fig = figure('visible', 'off');
+    end
+    e_x = xr - xo;
+    e_y = yr - yo;
+    ax1 = subplot(2, 1, 1);
+    hold on;
+    plot(t, e_x);
+    ylabel('X Error [mm]');
+    subplot(2, 1, 2);
+    hold on;
+    plot(t, e_y);
+    ylabel('Y Error [mm]');
+    xlabel('Time [s]');
+    f_name = sprintf('tracking_err_plot_%s%d.svg', name, randi(9999999));
+    st = sgtitle(sprintf('Tracking Error: %s Controller', name));
+    st.FontWeight = 'bold';
+    saveas(fig, f_name);
+end
+#+end_src
+*** Low Bandwidth Controllers
+#+begin_src matlab :session :exports both :results file
+ans = plot_track_err(...
+    l_t, l_xr, l_xo, l_yr, l_yo, 'Low Bandwidth');
+#+end_src
+
+#+RESULTS:
+[[file:tracking_err_plot_Low Bandwidth1269869.svg]]
+
+*** High Bandwidth Controllers
+#+begin_src matlab :session :exports both :results file
+ans = plot_track_err(...
+    h_t, h_xr, h_xo, h_yr, h_yo, 'High Bandwidth');
+#+end_src
+
+#+RESULTS:
+[[file:tracking_err_plot_High Bandwidth9133758.svg]]
+
+*** Analysis
+As seen from the plots, the high bandwidth controllers show less overall error magnitude.
+They also seem to converge faster, with steeper slopes and longer flat sections.
+** Contouring Errors
+Defining a function
+to calculate the contouring errors for a given location of the data:
+#+begin_src matlab :exports code :tangle get_cont_err.m
+function [err, e_xr, e_yr, e_xo, e_yo] = get_cont_err(...
+        xr, xo, yr, yo, loc, w)
+    w_x = w*[-0.5 0.5] + loc(1);
+    w_y = w*[-0.5 0.5] + loc(2);
+    es = [];
+    r_is = [];
+    o_is = [];
+    for i=1:size(xo, 1)
+        % Skip if point is outside of window
+        if xo(i) < min(w_x) || xo(i) > max(w_x)...
+                || yo(i) < min(w_y) || yo(i) > max(w_y)
+            continue
+        end
+        % Calculate distance to all reference points
+        o = [xo(i) yo(i)];
+        e_o = vecnorm([xr yr] - o, 2, 2);
+        % Contouring error at that point is the minimum
+        [e, r_i] = min(e_o);
+        es = [es e];
+        r_is = [r_is r_i];
+        o_is = [o_is i];
+    end
+    % Max contouring error within the reigion
+    [err, err_i] = max(es);
+    e_xr = xr(r_is(err_i));
+    e_yr = yr(r_is(err_i));
+    e_xo = xo(o_is(err_i));
+    e_yo = yo(o_is(err_i));
+end
+#+end_src
+
+Defining a function to plot the contouring errors:
+#+begin_src matlab :exports code :tangle plot_cont_err_internal.m
+function [f_name, fig, ax1] = plot_cont_err_internal(...
+        calc_err, r, xr, xo, yr, yo, name, w, showtext, fig)
+    lim = w*[-0.5 0.5];
+    for i=1:size(r, 1)
+        if calc_err
+            [err, e_xr, e_yr, e_xo, e_yo] = get_cont_err(...
+                xr, xo, yr, yo, r(i,:), w);
+        end
+        x_l = lim + r(i, 1);
+        y_l = lim + r(i, 2);
+        ax = subplot(2, 2, i);
+        hold on;
+        plot(xo, yo);
+        plot(xr, yr);
+        if calc_err
+            plot([e_xr e_xo], [e_yr e_yo]);
+            if showtext
+                text(w/20 + min(x_l), w/20 + min(y_l),...
+                    sprintf('Max Err: %.3e mm', err));
+            end
+        end
+        xlim(x_l);
+        ylim(y_l);
+        xlabel('X Position [mm]');
+        ylabel('Y Position [mm]');
+        title(sprintf('R%d', i));
+        hold off;
+        if i == 1
+            l = legend('Output', 'Reference', 'Max Error');
+            ax1 = ax;
+        end
+    end
+    f_name = sprintf('tracking_err_pos_plot_%s%d.svg', name, randi(999999));
+    st = sgtitle(sprintf('Contouring Error: %s Controller', name));
+    st.FontWeight = 'bold';
+    set(l, 'Location', 'NorthWest', ...
+           'color', 'none', 'edgecolor', 'none');
+    fig.Renderer = 'painters';
+    saveas(fig, f_name);
+end
+#+end_src
+
+Picking interesting regions to plot:
+#+begin_src matlab :exports code :tangle plot_cont_err.m
+function [f_name, fig, ax1] = plot_cont_err(...
+        xr, xo, yr, yo, name, w, showtext, fig)
+    if ~exist('fig', 'var')
+        fig = figure('visible', 'off',...
+                    'Position', [0 0 600 600]);
+    end
+    r = [20 15;  % R1
+         40 30;  % R2
+         60 30;  % R3
+         105 55.98];  % R4
+    [f_name, fig, ax1] = plot_cont_err_internal(...
+        true, r, xr, xo, yr, yo, name, w, showtext, fig);
+end
+#+end_src
+*** Low Bandwidth Controller
+#+begin_src matlab :session :exports both :results file
+ans = plot_cont_err(...
+    l_xr, l_xo, l_yr, l_yo, 'Low Bandwidth', 1, true);
+#+end_src
+#+RESULTS:
+[[file:tracking_err_pos_plot_Low Bandwidth632359.svg]]
+*** High Bandwidth Controller
+#+begin_src matlab :session :exports both :results file
+ans = plot_cont_err(...
+    h_xr, h_xo, h_yr, h_yo, 'High Bandwidth', 1, true);
+#+end_src
+
+#+RESULTS:
+[[file:tracking_err_pos_plot_High Bandwidth97541.svg]]
+*** Mismatched Controller
+#+begin_src matlab :session :exports both :results file
+ans = plot_cont_err(...
+    m_xr, m_xo, m_yr, m_yo, 'Mismatched', 1, true);
+#+end_src
+
+#+RESULTS:
+[[file:tracking_err_pos_plot_Mismatched278498.svg]]
+
+
+** Error at R1
+Let's find the tracking errors at point R1 for the low bandwidth controller:
+#+begin_src matlab :session :exports both :results code
+[r1_xr, idx] = min(abs(20 - l_xr));
+r1_yr = l_yr(idx);
+r1_xo = l_xo(idx);
+r1_yo = l_yo(idx);
+e_r1_x = r1_xr - r1_xo;
+e_r1_y = r1_yr - r1_yo;
+ans = [e_r1_x e_r1_y]
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+| -19.877 | 0.13194 |
+#+end_src
+
+The contouring error is then just the norm of the x and y tracking errors:
+#+begin_src matlab :session :exports both :results code
+ans = norm([e_r1_x e_r1_y])
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+19.877
+#+end_src
+
+For any system with feedback, it should be possible to calculate the "live" or instantaneous contouring error at any given time by just finding the distance between the actual position and the reference position.
+
+For "overall" or time independent contouring error, that can be found by finding the shortest distance from the current actual position to any point on the reference trajectory.
+In many cases, the error will be the same, but not always.
+A simple example would be a trajectory with oscillatory and linear motion along one axis, where there will be instantaneous contouring error, but no overall error since any overshoot on the end effector will lay on top of future or past points on the trajectory.
+** Mismatched Controller Behavior
+It appears that the contouring error will sometimes improve and sometimes degrade when only increasing the bandwidth of one controller.
+Looking at R1 for the contouring error has actually increased by increasing the bandwidth of just the X axis.
+I'm not quite sure why this would be, intuitively a higher bandwidth controller should drive the output more to the left, closer to the reference.
+There isn't any correlation between the two axes so it's unlikely that this would be caused by some interaction between the mismatched controllers.
+The other locations show less error as expected.
+Notably R2 shows the same overall contouring error, but the actual location of the error has been shifted to the left, closer to the point where the reference trajectory changes direction.
+
+Mismatched controllers on each axis would probably be undesirable on most general applications requiring the precise positioning of an end effector over time.
+However there may be applications where only one axis requires a high bandwidth, and it would be more cost effective to only engineer one axis to meet the capability.
+One example might be a machine to drizzle chocolate on granola bars, which commonly have a tight zigzag pattern.
+The drizzler would need to have oscillatory motion along the cross axis of the bar, but only relatively slow linear motion along the main axis of the bar.
+* Effect of Maximum Feedrate
+** New Toolpath
+Let's recreate our toolpath:
+#+begin_src matlab :session :exports code :results code
+f_c = 250;  % mm/s, max feedrate
+[x1, y1, dx1, dy1, ddx1, ddy1, l1, f1, a1] = linear_move(40, 30, f_c, A, D, T_i);
+[x2, y2, dx2, dy2, ddx2, ddy2, l2, f2, a2] = linear_move(20, 0, f_c, A, D, T_i);
+[x3, y3, dx3, dy3, ddx3, ddy3, l3, f3, a3] = arc_move(...
+    0, 0, 30, 0, f_c, A, D, T_i);
+x2 = x2 + x1(end);
+x3 = x3 + x2(end);
+y2 = y2 + y1(end);
+y3 = y3 + y2(end);
+l2 = l2 + l1(end);
+l3 = l3 + l2(end);
+x = [x1 x2 x3];
+y = [y1 y2 y3];
+t = [1:1:size(x, 2)]*T_i;
+xr = timeseries(x', t);
+yr = timeseries(y', t);
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+org_babel_eoe
+#+end_src
+
+Plotting the displacement, feedrate, and acceleration of our new toolpath:
+#+begin_src matlab :session :exports both :results file
+l = [l1 l2 l3];
+f = [f1 f2 f3];
+a = [a1 a2 a3];
+t = [1:1:size(l, 2)]*T_i;
+f_name = 'movement_plot.svg';
+fig = figure('visible', 'off');
+ax1 = subplot(3, 1, 1);
+plot(t, l);
+ylabel('Displacement [mm]')
+ax2 = subplot(3, 1, 2);
+plot(t, f);
+ylim([0 f_c + 10])
+ylabel('Velocity [mm/s]')
+ax3 = subplot(3, 1, 3);
+plot(t, a);
+ylim([D - 100, A + 100]) 
+ylabel('Acceleration [mm/s^2]')
+xlabel('Time [s]');
+linkaxes([ax1,ax2,ax3],'x')
+xlim([0 max(t)]);
+saveas(fig, f_name);
+ans = f_name;
+#+end_src
+
+#+RESULTS:
+[[file:movement_plot.svg]]
+
+Plotting the displacement, feedrate, and acceleration of each axis:
+#+begin_src matlab :session :exports both :results file
+dx = [dx1 dx2 dx3];
+ddx = [ddx1 ddx2 ddx3];
+dy = [dy1 dy2 dy3];
+ddy = [ddy1 ddy2 ddy3];
+f_name = 'axis_movement_plot.svg';
+fig = figure('visible', 'off');
+ax1 = subplot(3, 1, 1);
+plot(t, x);
+hold on;
+plot(t, y);
+l = legend('X Axis', 'Y Axis')
+ylabel('Displacement [mm]')
+ax2 = subplot(3, 1, 2);
+plot(t, dx);
+hold on;
+plot(t, dy);
+ylabel('Velocity [mm/s]')
+ax3 = subplot(3, 1, 3);
+plot(t, ddx);
+hold on;
+plot(t, ddy);
+ylabel('Acceleration [mm/s^2]')
+xlabel('Time [s]');
+linkaxes([ax1,ax2,ax3],'x')
+xlim([0 max(t)]);
+set(l, 'Location', 'NorthWest', 'color', 'none', 'edgecolor', 'none');
+fig.Renderer = 'painters';
+saveas(fig, f_name);
+ans = f_name;
+#+end_src
+
+#+RESULTS:
+[[file:axis_movement_plot.svg]]
+** High Feedrate Simulation
+Running the simulation again with our new toolpath:
+#+begin_src matlab :session :exports both :results code output
+contx_z = lli_lxz;
+conty_z = lli_lyz;
+[nl_t, nl_xr, nl_xo, nl_yr, nl_yo] = extract_sim_data(...
+    sim('xy_table', max(xr.Time)));
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+#+end_src
+
+Plottng the tracking error for both high and low feedrates:
+#+begin_src matlab :session :exports both :results file
+[f_name, fig] = plot_track_err(...
+    l_t, l_xr, l_xo, l_yr, l_yo, 'Low Bandwidth');
+[f_name, fig, ax1] = plot_track_err(...
+    nl_t, nl_xr, nl_xo, nl_yr, nl_yo, 'Low Bandwidth', fig);
+l = legend(ax1, 'Low Feedrate', 'High Feedrate');
+set(l, 'Location', 'SouthWest', ...
+        'color', 'none', 'edgecolor', 'none');
+saveas(fig, f_name);
+ans = f_name
+#+end_src
+
+#+RESULTS:
+[[file:tracking_err_plot_Low Bandwidth9575068.svg]]
+As expected, higher feedrates cause higher tracking error, especially in the circular reigion of the toolpath.
+** Contour Error Comparison
+#+begin_src matlab :session :exports both :results file
+[f_name, fig] = plot_cont_err(...
+    l_xr, l_xo, l_yr, l_yo, 'Low Bandwidth', 1, false);
+[f_name, fig, ax1] = plot_cont_err(...
+    nl_xr, nl_xo, nl_yr, nl_yo, 'Low Bandwidth', 1, false, fig);
+names = {'Out (Low FR)', 'Ref (Low FR)',...
+            'Err (Low FR)', 'Out (High FR)',...
+            'Ref (High FR)', 'Err (High FR)'}
+l = legend(ax1, names);
+
+saveas(fig, f_name);
+ans = f_name
+#+end_src
+
+#+RESULTS:
+[[file:tracking_err_pos_plot_Low Bandwidth157613.svg]]
+
+The higher feedrate toolpath shows significantly higher error during the circular part of the toolpath.
+Intuitively, this makes sense because a higher feedrate during the linear moves simply results in each axis spending a longer time in the acceleration and deceleration phase, whereas a higher feedrate during the circular moves require each axis to accelerate faster to match the trajectory.
+* Experiment vs. Simulation
+** Line Circle Comparison
+Loading the provided data:
+#+begin_src matlab :session :exports code :results code
+lli_data = load('line_circle/lli');
+lli_t = lli_data.lli.X.Data';
+lli_xo = lli_data.lli.Y(1).Data';
+lli_yo = lli_data.lli.Y(2).Data';
+lli_xr = lli_data.lli.Y(3).Data';
+lli_yr = lli_data.lli.Y(4).Data';
+
+% Remove data before and after trajectory
+start_idx = find(lli_xr, 1)
+end_idx = size(lli_t, 1) - find(flip(diff(lli_yr)./diff(lli_t)), 1)
+lli_t = lli_t(start_idx:end_idx);
+lli_t = lli_t - lli_t(1);
+lli_xo = lli_xo(start_idx:end_idx);
+lli_yo = lli_yo(start_idx:end_idx);
+lli_xr = lli_xr(start_idx:end_idx);
+lli_yr = lli_yr(start_idx:end_idx);
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+org_babel_eoe
+#+end_src
+
+Plottng the tracking error for both the simulated and measured data:
+#+begin_src matlab :session :exports both :results file
+[f_name, fig] = plot_track_err(...
+    l_t, l_xr, l_xo, l_yr, l_yo, 'Low Bandwidth');
+[f_name, fig, ax1] = plot_track_err(...
+    lli_t, lli_xr, lli_xo, lli_yr, lli_yo, 'Low Bandwidth', fig);
+l = legend(ax1, 'Simulation', 'Measurement');
+set(l, 'Location', 'SouthWest', ...
+        'color', 'none', 'edgecolor', 'none');
+saveas(fig, f_name);
+ans = f_name
+#+end_src
+
+#+RESULTS:
+[[file:tracking_err_plot_Low Bandwidth9571669.svg]]
+
+Plotting the contouring error:
+#+begin_src matlab :session :exports both :results file
+[f_name, fig] = plot_cont_err(...
+    l_xr, l_xo, l_yr, l_yo, 'Low Bandwidth', 1, false);
+[f_name, fig, ax1] = plot_cont_err(...
+    lli_xr, lli_xo, lli_yr, lli_yo, 'Low Bandwidth', 1, false, fig);
+names = {'Out (Sim)', 'Ref (Low Sim)',...
+            'Err (Low Sim)', 'Out (Data)',...
+            'Ref (Data)', 'Err (Data)'};
+l = legend(ax1, names);
+
+saveas(fig, f_name);
+ans = f_name
+#+end_src
+
+#+RESULTS:
+[[file:tracking_err_pos_plot_Low Bandwidth800280.svg]]
+As shown, the simulation seems to rather poorly correlate with the measured data.
+This is likely due to the simplicity of the simulation model.
+Notably, the model does not simulate friction, nor does it simulate any backlash present in the table mechanism.
+It also does not simulate the potentially varying friction caused by the force of the end effector over the work surface, which may be curved or misaligned.
+** Spongebob Comparison
+First let's load the original custom trajectory:
+#+begin_src matlab :session :exports code :results code
+jasper_traj = load('JasperTraj');
+jasper_t = jasper_traj.traj.t;
+jasper_x = jasper_traj.traj.x;
+jasper_y = jasper_traj.traj.y;
+xr = timeseries(jasper_x, jasper_t);
+yr = timeseries(jasper_y, jasper_t);
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+org_babel_eoe
+#+end_src
+
+Running our simulation against this custom trajectory:
+#+begin_src matlab :session :exports both :results code output
+contx_z = lli_lxz;
+conty_z = lli_lyz;
+[j_t, j_xr, j_xo, j_yr, j_yo] = extract_sim_data(...
+    sim('xy_table', max(xr.Time)));
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+#+end_src
+
+Let's also load the provided data:
+
+#+begin_src matlab :session :exports both :results code output
+sb_lli_data = load('spongebob/lli');
+sb_lli_t = sb_lli_data.lli.X.Data';
+sb_lli_xo = sb_lli_data.lli.Y(1).Data';
+sb_lli_yo = sb_lli_data.lli.Y(2).Data';
+sb_lli_xr = sb_lli_data.lli.Y(3).Data';
+sb_lli_yr = sb_lli_data.lli.Y(4).Data';
+
+% Remove data before and after trajectory
+start_idx = find(sb_lli_xr, 1);
+end_idx = size(sb_lli_t, 1) - find(flip(diff(sb_lli_yr)./diff(sb_lli_t)), 1);
+sb_lli_t = sb_lli_t(start_idx:end_idx);
+sb_lli_t = sb_lli_t - sb_lli_t(1);
+sb_lli_xo = sb_lli_xo(start_idx:end_idx);
+sb_lli_yo = sb_lli_yo(start_idx:end_idx);
+sb_lli_xr = sb_lli_xr(start_idx:end_idx);
+sb_lli_yr = sb_lli_yr(start_idx:end_idx);
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+start_idx =
+       24690
+end_idx =
+     1124098
+#+end_src
+
+Defining some points of interest to plot:
+#+begin_src matlab :exports code :tangle plot_cont_err_sb.m
+function [f_name, fig, ax1] = plot_cont_err_sb(...
+        xr, xo, yr, yo, name, w, showtext, fig)
+    if ~exist('fig', 'var')
+        fig = figure('visible', 'off',...
+                    'Position', [0 0 600 600]);
+    end
+    r = [23.8127 19.8594;  % R1, Tip of top lip
+         59.5902 53.5533;  % R2, Entry line of left eye
+         7.12714 50.5594;  % R3, Entry line of right eye
+         30.1488 65.42];  % R4, Middle of front top edge
+    % Dataset too large to find max contour error within reigion
+    [f_name, fig, ax1] = plot_cont_err_internal(...
+        false, r, xr, xo, yr, yo, name, w, showtext, fig)
+end
+#+end_src
+
+#+begin_src matlab :session :exports both :results file
+[f_name, fig] = plot_cont_err_sb(...
+    j_xr, j_xo, j_yr, j_yo, 'Low Bandwidth', 1, false);
+[f_name, fig, ax1] = plot_cont_err_sb(...
+    sb_lli_xr, sb_lli_xo, sb_lli_yr, sb_lli_yo, 'Low Bandwidth', 1, false, fig);
+names = {'Out (Sim)', 'Ref (Low Sim)',...
+            'Out (Data)', 'Ref (Data)'}
+l = legend(ax1, names, 'Location', 'SouthWest');
+
+saveas(fig, f_name);
+ans = f_name
+#+end_src
+
+#+RESULTS:
+[[file:tracking_err_pos_plot_Low Bandwidth35712.svg]]
+
+As shown in the graph, the measured output again doesn't quite match the simulated output, likely for the reasons given above.
+However, at least for the application of making an artistic drawing, this error has had a negligible effect on the outcome.
+* Conclusion
+It appears that the simulation model is a little too simple to properly characterize the real system, leading to large discrepancies between the absolute error from simulation and from measurement.
+However, the error of both the simulation and real system relative to the total travel of the machine is minuscule (i.e. total travel of the table is $\SI{100}{\milli\meter}$ whereas the error is usually sub-millimeter).
+Assuming this relative error is acceptable for the application, the simulation is then a good enough representation of the real system suitable for testing toolpaths before they are run on the real machine.
+
+
