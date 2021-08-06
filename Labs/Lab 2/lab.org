@@ -1,0 +1,491 @@
+#+TITLE: MECH 467 Lab 2:
+#+AUTHOR: Jasper Chan - 37467164 @@latex:\\@@ jasperchan515@gmail.com
+#+SUBTITLE: Digital Control of Motion Actuators
+
+#+OPTIONS: title:nil toc:nil
+
+#+LATEX_HEADER: \definecolor{bg}{rgb}{0.95,0.95,0.95}
+#+LATEX_HEADER: \setminted{frame=single,bgcolor=bg,samepage=true}
+#+LATEX_HEADER: \setlength{\parindent}{0pt}
+#+LATEX_HEADER: \usepackage{float}
+#+LATEX_HEADER: \usepackage{svg}
+#+LATEX_HEADER: \usepackage{cancel}
+#+LATEX_HEADER: \usepackage{amssymb}
+#+LATEX_HEADER: \usepackage{mathtools, nccmath}
+#+LATEX_HEADER: \newcommand{\Lwrap}[1]{\left\{#1\right\}}
+#+LATEX_HEADER: \newcommand{\Lagr}[1]{\mathcal{L}\Lwrap{#1}}
+#+LATEX_HEADER: \newcommand{\Lagri}[1]{\mathcal{L}^{-1}\Lwrap{#1}}
+#+LATEX_HEADER: \newcommand{\Ztrans}[1]{\mathcal{Z}\Lwrap{#1}}
+#+LATEX_HEADER: \newcommand{\Ztransi}[1]{\mathcal{Z}^{-1}\Lwrap{#1}}
+#+LATEX_HEADER: \newcommand{\ZOH}[1]{\text{ZOH}\left(#1\right)}
+
+#+BEGIN_EXPORT latex
+\makeatletter
+\begin{titlepage}
+\begin{center}
+\vspace*{2in}
+{\Large \@title \par}
+\vspace{1in}
+{\Large \@author \par}
+\vspace{3in}
+{\large \@date}
+\end{center}
+\end{titlepage}
+\makeatother
+#+END_EXPORT
+
+#+BEGIN_EXPORT latex
+\begin{abstract}
+The purpose of this report is to characterize the controllers designed in the prelab and to assess the suitability of using a simulation of the to predict the behavior system.
+This will be done by applying the control laws developed to the real system.
+The data from the system and simulation will then be compared to see how well they correlate.
+\end{abstract}
+#+END_EXPORT
+
+\tableofcontents
+
+#+begin_src elisp :session :exports none
+(org-babel-tangle)
+#+end_src
+
+#+RESULTS:
+| ramp_error.m | rise_time.m | plot_sim_vs_exp.m |
+
+Note: when not specified, all units are SI without prefixes.
+* Introduction
+Control engineering is found in any situation where some system needs to behave in a repeatable, predictable fashion.
+Examples include maintaining the temperature of a container at within some constant temperature range, to ensuring that a car properly reacts to a driver's in a drive by wire system.
+In every case the requirements of the controller varies.
+For the temperature example it may be fine to have some steady state error, but overshoot is undesired for energy saving reasons.
+For the car example it would be undesirable for there to be significant delay between input and output, but no requirement to have a high bandwidth as the driver would be unlikely to provide high frequency inputs.
+
+* Measurements
+This portion has already been completed by the lab TAs
+* Analysis
+** Setup
+First let's load the provided data
+#+begin_src matlab :session :exports both :results none
+path = 'data';
+files = dir(fullfile(path, '*.mat'));
+names = {};
+
+data = containers.Map();
+for i = 1:length(files)
+    f_name = files(i).name;
+    name = erase(f_name, '_1.mat');
+    f_path = fullfile(path, f_name);
+    load(f_path); 
+    % load() puts data in a variable called output
+    d = containers.Map(...
+        {name}, {output});
+    data = [data; d];
+    names = [names; name];
+end
+#+end_src
+
+Now that we have all the data loaded, let's prepare our Simulink models using values from the prelab[fn:errata1].
+
+[fn:errata1] The calculations for the lead lag compensator in the prelab contain an error where I neglected to convert $\phi$ from degrees to radians. The resulting compensator coincidentally meets the given requirements, which is why I did not catch the error. The correct values provided from Canvas are used here.
+
+
+
+
+#+begin_src matlab :session :exports code :results none
+% Values from prelab
+K_a = 0.887;  % A/V
+K_t = 0.72;  % Nm/A
+J_e = 7e-4;  % Kgm^2
+B_e = 0.00612;  % Nm/rad/s
+K_e = 20/(2*pi);  % mm/rad
+T = 0.0002;  % s
+K_p = 1.2527; % V/mm
+
+mu_k = 0.3;
+sat = 5;  % from Canvas
+ref_in = tf(1);  % sample step input
+
+omega_c = 377;  % rad/s
+a = 13.92;  % from Canvas
+tau = 7e-4;  % from Canvas
+K_comp = 13.11;  % from Canvas
+num_comp = K_comp*[a*tau 1];
+den_comp = [tau 1];
+C_comp = tf(num_comp, den_comp);  % compensator
+
+K_i = omega_c /10;
+integral_action = tf([1 K_i], [1 0]);
+int_act = tf(1);  % Start with integral action disabled
+#+end_src
+
+#+RESULTS:
+
+Let's also define our input step and ramp functions
+#+begin_src matlab :session :exports code :results none
+% Values from lab data
+r_speed = 5;  % mm/s
+t_start = 0.5;  % s
+t_len = 2;  % s
+t_end_s = 4.1006;  % s
+t_end_r = 5.39;  % s
+
+s = tf('s');
+% Pulse of length t_len
+step_in = 1 - exp(-t_len*s);
+% Ramp up at r_speed for t_len then back down at same rate
+ramp_in = r_speed*(1 - t_len*exp(-t_len*s) + exp(-2*t_len*s))/s;
+#+end_src
+
+Loading our models:
+#+begin_src matlab :session :exports none :results none
+open_system('closedloop_P');
+print -dsvg -s 'cl_P_simulink_raw.svg';
+#+end_src
+#+begin_src shell :exports results :results file
+inkscape cl_P_simulink_raw.svg --export-text-to-path --export-plain-svg -o cl_P_simulink.svg
+printf 'cl_P_simulink.svg'
+#+end_src
+
+#+ATTR_LATEX: :placement [H]
+#+CAPTION: Simulink Model with proportional controller
+#+RESULTS:
+[[file:cl_P_simulink.svg]]
+
+#+begin_src matlab :session :exports none :results none
+open_system('closedloop_leadlag');
+print -dsvg -s 'cl_C_simulink_raw.svg';
+#+end_src
+#+begin_src shell :exports results :results file
+inkscape cl_C_simulink_raw.svg --export-text-to-path --export-plain-svg -o cl_C_simulink.svg
+printf 'cl_C_simulink.svg'
+#+end_src
+
+#+ATTR_LATEX: :placement [H]
+#+CAPTION: Simulink Model with lead lag compensator
+#+RESULTS:
+[[file:cl_C_simulink.svg]]
+
+** Acquiring Simulation Data
+Now let's run our Simulink models for scenarios we have data for:
+#+begin_src matlab :session :exports code :results none
+sim_data = containers.Map();
+
+name = 'P_Step';
+ref_in = step_in;  % step input
+out = sim('closedloop_P', t_end_s);
+d = containers.Map({name}, {out});
+sim_data = [sim_data; d];
+
+name = 'P_Ramp';
+ref_in = ramp_in; % ramp input
+out = sim('closedloop_P', t_end_r);
+d = containers.Map({name}, {out});
+sim_data = [sim_data; d];
+
+name = 'LL_Step';
+ref_in = step_in;
+out = sim('closedloop_leadlag', t_end_s);
+d = containers.Map({name}, {out});
+sim_data = [sim_data; d];
+
+name = 'LL_Ramp';
+ref_in = ramp_in;
+out = sim('closedloop_leadlag', t_end_r);
+d = containers.Map({name}, {out});
+sim_data = [sim_data; d];
+
+int_act = integral_action; % Enable integral action
+name = 'LLI_Step';
+ref_in = step_in;
+out = sim('closedloop_leadlag', t_end_s);
+d = containers.Map({name}, {out});
+sim_data = [sim_data; d];
+
+name = 'LLI_Ramp';
+ref_in = ramp_in;
+out = sim('closedloop_leadlag', t_end_r);
+d = containers.Map({name}, {out});
+sim_data = [sim_data; d];
+#+end_src
+
+** Plots
+Let's define a function to help us plot our results:
+#+begin_src matlab :exports code :tangle plot_sim_vs_exp.m
+function f_name = plot_sim_vs_exp(name, ttl, sim_data, exp_data)
+    f_name = strcat(name, '.svg');
+    f = figure('visible', 'off',...
+                'Position', [0 0 600 300]);
+    plot(exp_data(name).time, exp_data(name).CH1in);
+    hold on;
+    plot(exp_data(name).time, exp_data(name).CH1out);
+    plot(sim_data(name).out.Time, sim_data(name).out.Data, 'r--');
+    hold off;
+    xlabel('Time [s]')
+    ylabel('Position [mm]')
+    title(ttl);
+    l = legend('Reference', 'Raw Data', 'Simulation');
+    set(l, 'color', 'none', 'edgecolor', 'none');
+    saveas(f, f_name);
+end
+#+end_src
+Plotting each dataset against our simulation:
+
+#+begin_src matlab :session :exports both :results file
+name = 'P_Step';
+ttl = 'Proportional Controller Step Input';
+ans = plot_sim_vs_exp(name, ttl, sim_data, data);
+#+end_src
+
+#+RESULTS:
+[[file:P_Step.svg]]
+
+#+begin_src matlab :session :exports both :results file
+name = 'P_Ramp';
+ttl = 'Proportional Controller Ramp Input';
+ans = plot_sim_vs_exp(name, ttl, sim_data, data);
+#+end_src
+
+#+RESULTS:
+[[file:P_Ramp.svg]]
+
+#+begin_src matlab :session :exports both :results file
+name = 'LL_Step';
+ttl = 'Lead-Lag Compensator Step Input';
+ans = plot_sim_vs_exp(name, ttl, sim_data, data);
+#+end_src
+
+#+RESULTS:
+[[file:LL_Step.svg]]
+
+#+begin_src matlab :session :exports both :results file
+name = 'LL_Ramp';
+ttl = 'Lead-Lag Compensator Ramp Input';
+ans = plot_sim_vs_exp(name, ttl, sim_data, data);
+#+end_src
+
+#+RESULTS:
+[[file:LL_Ramp.svg]]
+
+#+begin_src matlab :session :exports both :results file
+name = 'LLI_Step';
+ttl = 'Lead-Lag Integrator Step Input';
+ans = plot_sim_vs_exp(name, ttl, sim_data, data);
+#+end_src
+
+#+RESULTS:
+[[file:LLI_Step.svg]]
+
+#+begin_src matlab :session :exports both :results file
+name = 'LLI_Ramp';
+ttl = 'Lead-Lag Integrator Ramp Input';
+ans = plot_sim_vs_exp(name, ttl, sim_data, data);
+#+end_src
+
+#+RESULTS:
+[[file:LLI_Ramp.svg]]
+
+** Comparison of Experiments and Simulation
+*** Rise time and overshoot comparison of step responses
+Let's start by creating a table to hold our data:
+#+begin_src matlab :session :exports code :results output code 
+names = {'P_Step'; 'LL_Step'; 'LLI_Step'};
+tb = table('Size', [3 4], ...
+           'VariableTypes', {'double', 'double', 'double', 'double'}, ...
+           'RowNames', names, ...
+           'VariableNames', {...
+               'Exp t_r [s]', 'Sim t_r [s]', ...
+               'Exp M_p [mm]', 'Sim M_p [mm]'})
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+tb =
+  3x4 table
+                Exp t_r [s]    Sim t_r [s]    Exp M_p [mm]    Sim M_p [mm]
+                ___________    ___________    ____________    ____________
+    P_Step           0              0              0               0      
+    LL_Step          0              0              0               0      
+    LLI_Step         0              0              0               0
+#+end_src
+
+Defining a function to calculate the rise time[fn:rise_time]:
+[fn:rise_time] Rise time $t_r$ is defined as the time it takes for the output to go from $\SI{10}{\percent}$ to $\SI{90}{\percent}$ of the input step signal.
+
+
+
+
+
+#+begin_src matlab :exports code :tangle rise_time.m
+function t_r = rise_time(t, d)
+    i_min = find(d >= 0.1, 1);
+    i_max = find(d >= 0.9, 1);
+    t_r = t(i_max) - t(i_min);
+end
+#+end_src
+
+Overshoot[fn:overshoot] is simple enough to calculate without a function.
+[fn:overshoot] Overshoot $M_p$ is defined as the maximum value the output reaches above the input step signal.
+
+
+
+
+
+Now let's fill in our table:
+#+begin_src matlab :session :exports both :results output code
+for i=1:size(names, 1)
+    name = char(names(i));
+    t = data(name).time;
+    d = data(name).CH1out;
+    exp_t_r = rise_time(t, d);
+    exp_M_p = max(d) - 1;
+    t = sim_data(name).out.Time;
+    d = sim_data(name).out.Data;
+    sim_t_r = rise_time(t, d);
+    sim_M_p = max(d) - 1;
+    tb(name,:) = {exp_t_r sim_t_r sim_M_p exp_M_p};
+end
+tb
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+tb =
+  3x4 table
+                Exp t_r [s]    Sim t_r [s]    Exp M_p [mm]    Sim M_p [mm]
+                ___________    ___________    ____________    ____________
+    P_Step        0.0276         0.026497        0.12576         0.1418   
+    LL_Step       0.0194           0.0188      -0.011932        -0.0068   
+    LLI_Step      0.0096        0.0092997        0.19648         0.2274
+#+end_src
+
+The table shows that for these response parameters, the simulation actually produces very similar results to the actual experimental data.
+However, looking at the plots themselves shows that there is some discrepancy.
+The models are using a rather simple model for friction and the other friction sources may in fact be non-negligible for step inputs on the real system.
+Another factor is that there may be issues with the solver MATLAB used to run the simulation.
+Canvas suggests using a fixed step size but it seems that leaving everything at automatic provided the best results.
+Of course, there are other things about the system that are not captured in the model which may have an effect, such as backlash.
+
+
+
+*** Steady state error comparison of ramp responses
+Let's start by creating a table to hold our data:
+#+begin_src matlab :session :exports code :results output code 
+names = {'P_Ramp'; 'LL_Ramp'; 'LLI_Ramp'};
+tb = table('Size', [3 2], ...
+           'VariableTypes', {'double', 'double'}, ...
+           'RowNames', names, ...
+           'VariableNames', {'Exp e_ss [mm]', 'Sim e_ss [mm]'})
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+tb =
+  3x2 table
+                Exp e_ss [mm]    Sim e_ss [mm]
+                _____________    _____________
+    P_Ramp            0                0      
+    LL_Ramp           0                0      
+    LLI_Ramp          0                0
+#+end_src
+
+Defining a function to calculate the steady state error:
+#+begin_src matlab :exports code :tangle ramp_error.m
+function e_ss = ramp_error(t, d, in)
+    % Average error over final portion of ramp up
+    t_s = 2.3;
+    t_f = 2.4;  
+    i_min = find(t >= t_s, 1);
+    i_max = find(t >= t_f, 1);
+    d_r = d(i_min:i_max);
+    i_r = in(i_min:i_max);
+    e_ss = mean(i_r - d_r);
+end
+#+end_src
+
+Now let's fill in our table:
+#+begin_src matlab :session :exports both :results output code
+for i=1:size(names, 1)
+    name = char(names(i));
+    t = data(name).time;
+    d = data(name).CH1out;
+    in = data(name).CH1in;
+    exp_e_ss = ramp_error(t, d, in);
+    t = sim_data(name).out.Time;
+    d = sim_data(name).out.Data;
+    in = sim_data(name).in.Data;
+    sim_e_ss = ramp_error(t, d, in);
+    tb(name,:) = {exp_e_ss sim_e_ss};
+end
+tb
+#+end_src
+
+#+RESULTS:
+#+begin_src matlab
+tb =
+  3x2 table
+                Exp e_ss [mm]    Sim e_ss [mm]
+                _____________    _____________
+    P_Ramp          0.16655            0.387  
+    LL_Ramp        0.017722         0.036979  
+    LLI_Ramp     0.00054251       -8.518e-17
+#+end_src
+
+The table shows that the model is fairly accurate at predicting the behavior of the real system.
+The experimental value found for the proportional controller is somewhat questionable since there is still a clear oscillation in the output data even near the end of the ramp input which means it is not yet at steady state.
+Again, discrepancies between the model and real system are likely to come from the simple friction model or error in the numerical solver or other behavior not captured by the model.
+** Comparison of Controllers
+*** Effect of increased bandwidth on rise time of a step response and steady state error of a ramp response
+The increased bandwidth provided by the lead-lag compensator compared to the proportional controller allows for a faster rise time and a smaller steady state error.
+This is caused by the extra amplification of a wider range of frequencies which allows the system to exert more control effort in reaching the reference signal.
+*** Lead-lag compensator max bandwidth
+The compensator works by adding phase centered around a specific frequency $\omega_c$ of the bode plot.
+This provides the necessary phase margin to increase the gain of the system and hence the bandwidth to some new value.
+However, the phase added is not uniform, but rather distributed around $\omega_c$.
+For systems where the phase drops below $\SI{-180}{\degree}$ at some frequency $\omega_0$, adding compensation at some $\omega_c \gg \omega_0$ may not raise the phase above $\SI{-180}{\degree}$ for all frequencies below $\omega_c$.
+There is of course, the possibility of cascading multiple compensators with different center frequencies to increase the bandwidth to some arbitrary value, at the cost of added implementation complexity.
+*** Integrator benefits
+Let's assume some simple plant:
+\begin{equation}
+G_\text{ol}(s) = \frac{1}{s + 1}
+\end{equation}
+If we put $G(s)$ in a simple feedback loop with just unity gain proportional control, we get:
+\begin{align*}
+G_\text{clp}(s) &= \frac{\frac{1}{s + 1}}{1 + \frac{1}{s + 1}} \\
+&= \frac{1}{s + 1 + 1} = \frac{1}{s + 2}
+\end{align*}
+If we take the steady state error for a step input $R(s) = \frac{1}{s}$ into $G_\text{clp}(s)$, we get:
+\begin{align*}
+e_{ss_\text{clp}} &= \lim_{s \to 0}s R(s)(1 - G_\text{clp}(s)) \\
+&= \lim_{s \to 0} 1 - \frac{1}{s + 2} \\
+&= \lim_{s \to 0} \frac{s + 1}{s + 2} \\
+&= \frac{1}{2}
+\end{align*}
+
+If we instead add an integrator to the feedback loop, we get:
+\begin{align*}
+G_\text{cli}(s) &= \frac{\frac{1}{s}\frac{1}{s + 1}}{1 + \frac{1}{s}\frac{1}{s + 1}} \\
+&= \frac{1}{s(s + 1) + 1} = \frac{1}{s^2 + s + 1}
+\end{align*}
+Taking the steady state error for the same input:
+\begin{align*}
+e_{ss_\text{cli}} &= \lim_{s \to 0}s R(s)(1 - G_\text{cli}(s)) \\
+&= \lim_{s \to 0} 1 - \frac{1}{s^2 + s + 1} \\
+&= \lim_{s \to 0} \frac{s^2 + s}{s^2 + s + 1} \\
+&= 0
+\end{align*}
+*** Integrator overshoot
+The integrator amplifies the sum of the error over time.
+When the reference input steps up, and before the system has had time to catch up to the input, error accumulates in the integrator, which then gets amplified and increases the control effort exerted.
+Because this error keeps accumulating until the output matches the input, the exerted control effort may be too much and cause the response to overshoot.
+This issue can be reduced by reducing the integrator gain, at the cost of a longer time required for the error to approach zero.
+*** Reasons to not use an integral controller
+Any situation where it is critical to not overshoot, such as being able to move the table all the way to the end of its travel while not damaging anything.
+Of course, an integrator can still be used if its gain is small enough to not overshoot for the max possible error (i.e. table starts at one end of travel and recieves input to move to the other end of travel), although this may not be possible in all scenarios.
+An integral controller also subtracts phase, which may lower phase margin and even lead to instability on some systems.
+* Conclusion
+For the most part, the controllers and models built in the prelab match the experimental data well.
+
+However, it is generally impossible for a simulation to capture all aspects of a real system, and it is important to know which aspects are negligible and can be ignored in modelling.
+Knowledge of how the numerical solvers behave in different situations is also critical to getting simulation results that behave correctly in a reasonable amount of time.
+
+In cases where the simulation does not match the real system, it may be challenging to know where the discrepancy comes from without having an understanding of these factors.
+
